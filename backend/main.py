@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,16 @@ from services.pdf_service import extract_pdf_pages
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="RuleShift API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class PolicyInput(BaseModel):
