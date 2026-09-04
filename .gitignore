@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# RuleShift generated data
+ruleshift.db
+ruleshift.db-*
+chroma_db/
