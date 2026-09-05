@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,6 +8,30 @@ from sqlalchemy.pool import StaticPool
 
 from backend.main import app, get_database
 from database.db import Base
+
+
+FAKE_ANSWER = {
+    "answer": "Students must maintain 85% attendance.",
+    "evidence": [
+        {
+            "policy_name": "Academic Attendance Policy",
+            "version": "2026",
+            "page_number": 1,
+            "text": "Students must maintain a minimum attendance of 85%.",
+        }
+    ],
+}
+
+
+def ask(client, policy_name, version, question="What attendance is required?"):
+    return client.post(
+        "/ask",
+        json={
+            "policy_name": policy_name,
+            "version": version,
+            "question": question,
+        },
+    )
 
 
 @pytest.fixture()
@@ -390,6 +416,95 @@ def test_student_impact_returns_not_found(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Policy id 999 not found."
+
+
+def test_ask_returns_not_found_for_nonexistent_policy(client):
+    response = client.post(
+        "/ask",
+        json={
+            "policy_name": "Nonexistent Policy",
+            "version": "2026",
+            "question": "What is the attendance requirement?",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Policy 'Nonexistent Policy' version '2026' not found."
+
+
+def test_ask_rejects_draft_policy(client):
+    draft_policy = create_draft(client, version="2026", attendance_requirement=80)
+
+    response = ask(client, draft_policy["name"], draft_policy["version"])
+
+    assert response.status_code == 409
+    assert "DRAFT" in response.json()["detail"]
+
+
+def test_ask_returns_not_found_for_wrong_version(client):
+    create_verified(client, version="2025", attendance_requirement=75)
+
+    response = ask(client, "Academic Attendance Policy", "2026")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == (
+        "Policy 'Academic Attendance Policy' version '2026' not found."
+    )
+
+
+@patch("backend.main.answer_policy_question")
+def test_ask_allows_verified_policy(mock_answer, client):
+    mock_answer.return_value = dict(FAKE_ANSWER)
+    policy = create_verified(client, version="2026", attendance_requirement=85)
+
+    response = ask(client, policy["name"], policy["version"])
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "Students must maintain 85% attendance."
+    assert response.json()["evidence"] == FAKE_ANSWER["evidence"]
+    mock_answer.assert_called_once_with(
+        "Academic Attendance Policy", "2026", "What attendance is required?"
+    )
+
+
+def evidence_for_version(policy_name, version):
+    evidence = dict(FAKE_ANSWER["evidence"][0])
+    evidence["policy_name"] = policy_name
+    evidence["version"] = version
+    return {"answer": FAKE_ANSWER["answer"], "evidence": [evidence]}
+
+
+@patch("backend.main.answer_policy_question")
+def test_ask_allows_current_policy(mock_answer, client):
+    mock_answer.side_effect = lambda name, version, question: evidence_for_version(
+        name, version
+    )
+    policy = create_verified(client, version="2026", attendance_requirement=85)
+    client.post(f"/policies/{policy['id']}/mark-current")
+
+    response = ask(client, policy["name"], policy["version"])
+
+    assert response.status_code == 200
+    assert response.json()["evidence"][0]["version"] == "2026"
+
+
+@patch("backend.main.answer_policy_question")
+def test_ask_allows_superseded_policy(mock_answer, client):
+    mock_answer.side_effect = lambda name, version, question: evidence_for_version(
+        name, version
+    )
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    client.post(f"/policies/{old_policy['id']}/mark-current")
+    new_policy = create_verified(client, version="2026", attendance_requirement=85)
+    client.post(f"/policies/{new_policy['id']}/mark-current")
+
+    response = ask(client, old_policy["name"], old_policy["version"])
+
+    assert response.status_code == 200
+    assert response.json()["evidence"][0]["version"] == "2025"
+    mock_answer.assert_called_once_with(
+        "Academic Attendance Policy", "2025", "What attendance is required?"
+    )
 
 
 @pytest.mark.parametrize(

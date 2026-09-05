@@ -865,6 +865,33 @@ form > button:hover:not(:disabled) {
   font-size: 0.7rem;
 }
 
+.evidence-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.evidence-item .evidence-meta {
+  color: #dbe8e4;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.evidence-item .evidence-text {
+  margin: 6px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 3px solid rgba(255, 255, 255, 0.25);
+  color: #eaf2ef;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

@@ -78,12 +78,12 @@ function App() {
   const [studentImpact, setStudentImpact] = useState(null);
   const [impactMessage, setImpactMessage] = useState({ type: "", text: "" });
 
-  const [questionPolicy, setQuestionPolicy] = useState("");
+  const [questionPolicyName, setQuestionPolicyName] = useState("");
   const [questionVersion, setQuestionVersion] = useState("");
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState("");
-  const [sources, setSources] = useState([]);
+  const [evidence, setEvidence] = useState([]);
   const [questionMessage, setQuestionMessage] = useState({ type: "", text: "" });
 
   async function loadPolicies() {
@@ -145,8 +145,6 @@ function App() {
         type: "success",
         text: `${data.name} ${data.version} uploaded. Attendance requirement: ${data.attendance_requirement}%.`,
       });
-      setQuestionPolicy(data.name);
-      setQuestionVersion(data.version);
       setPolicyFile(null);
       setFileInputKey((currentKey) => currentKey + 1);
       await loadPolicies();
@@ -255,7 +253,7 @@ function App() {
     event.preventDefault();
     setAsking(true);
     setAnswer("");
-    setSources([]);
+    setEvidence([]);
     setQuestionMessage({ type: "", text: "" });
 
     try {
@@ -263,14 +261,14 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          policy_name: questionPolicy,
+          policy_name: questionPolicyName,
           version: questionVersion,
           question,
         }),
       });
 
       setAnswer(data.answer);
-      setSources(data.sources);
+      setEvidence(data.evidence);
     } catch (error) {
       setQuestionMessage({ type: "error", text: error.message });
     } finally {
@@ -295,6 +293,11 @@ function App() {
   const impactNewPolicyOptions = comparablePolicies.filter(
     (policy) =>
       policy.name === impactOldPolicy?.name && String(policy.id) !== String(impactOldPolicyId),
+  );
+
+  const questionPolicyNames = [...new Set(comparablePolicies.map((policy) => policy.name))];
+  const questionVersionOptions = comparablePolicies.filter(
+    (policy) => policy.name === questionPolicyName,
   );
 
   return (
@@ -733,23 +736,45 @@ function App() {
               <div className="form-row">
                 <label>
                   Policy name
-                  <input
-                    type="text"
-                    value={questionPolicy}
-                    onChange={(event) => setQuestionPolicy(event.target.value)}
-                    placeholder="Academic Attendance Policy"
+                  <select
+                    value={questionPolicyName}
+                    onChange={(event) => {
+                      setQuestionPolicyName(event.target.value);
+                      setQuestionVersion("");
+                      setAnswer("");
+                      setEvidence([]);
+                    }}
                     required
-                  />
+                  >
+                    <option value="">Select a policy…</option>
+                    {questionPolicyNames.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Version
-                  <input
-                    type="text"
+                  <select
                     value={questionVersion}
-                    onChange={(event) => setQuestionVersion(event.target.value)}
-                    placeholder="2026"
+                    onChange={(event) => {
+                      setQuestionVersion(event.target.value);
+                      setAnswer("");
+                      setEvidence([]);
+                    }}
+                    disabled={!questionPolicyName}
                     required
-                  />
+                  >
+                    <option value="">
+                      {questionPolicyName ? "Select a version…" : "Select a policy first…"}
+                    </option>
+                    {questionVersionOptions.map((policy) => (
+                      <option key={policy.id} value={policy.version}>
+                        {policy.version} ({policy.status})
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
@@ -764,7 +789,7 @@ function App() {
                 />
               </label>
 
-              <button type="submit" disabled={asking}>
+              <button type="submit" disabled={asking || !questionPolicyName || !questionVersion}>
                 {asking ? "Finding an answer…" : "Ask RuleShift"}
               </button>
               <Message message={questionMessage} />
@@ -774,14 +799,24 @@ function App() {
               <div className="answer-card" aria-live="polite">
                 <span className="answer-label">Answer</span>
                 <p>{answer}</p>
-                {sources.length > 0 && (
+                {evidence.length > 0 && (
                   <div className="sources">
-                    <span>Sources</span>
+                    <span>Evidence</span>
                     <div>
-                      {sources.map((source, index) => (
-                        <small key={`${source.version}-${source.page_number}-${index}`}>
-                          {source.policy_name} · {source.version} · Page {source.page_number}
-                        </small>
+                      {evidence.map((item, index) => (
+                        <div className="evidence-item" key={`${item.version}-${item.page_number}-${index}`}>
+                          <small className="evidence-meta">
+                            Policy: {item.policy_name}
+                          </small>
+                          <small className="evidence-meta">
+                            Version: {item.version}
+                          </small>
+                          <small className="evidence-meta">
+                            Page: {item.page_number}
+                          </small>
+                          <small className="evidence-meta">Relevant text:</small>
+                          <blockquote className="evidence-text">{item.text}</blockquote>
+                        </div>
                       ))}
                     </div>
                   </div>

@@ -10,6 +10,10 @@ from ai.llm import get_embeddings, get_llm
 CHROMA_DIRECTORY = "./chroma_db"
 COLLECTION_NAME = "policy_documents"
 
+INSUFFICIENT_EVIDENCE_ANSWER = (
+    "I could not find enough evidence in this policy version to answer that question."
+)
+
 
 def get_vector_store():
     return Chroma(
@@ -78,33 +82,54 @@ def retrieve_policy_chunks(policy_name, version, question):
 def answer_policy_question(policy_name, version, question):
     documents = retrieve_policy_chunks(policy_name, version, question)
 
+    # Defense in depth: retrieval already filters by exact policy name and
+    # version, but no chunk from another policy or version may ever reach the
+    # answer or the evidence list.
+    documents = [
+        document
+        for document in documents
+        if document.metadata.get("policy_name") == policy_name
+        and document.metadata.get("version") == version
+    ]
+
     if not documents:
         return {
-            "answer": "No information was found for that policy version.",
-            "sources": [],
+            "answer": INSUFFICIENT_EVIDENCE_ANSWER,
+            "evidence": [],
         }
 
     context_parts = []
-    sources = []
+    evidence = []
 
     for document in documents:
         page_number = document.metadata["page_number"]
-        context_parts.append(f"Page {page_number}:\n{document.page_content}")
-        sources.append(
+        context_parts.append(
+            f"Policy: {document.metadata['policy_name']}\n"
+            f"Version: {document.metadata['version']}\n"
+            f"Page {page_number}:\n{document.page_content}"
+        )
+        evidence.append(
             {
                 "policy_name": document.metadata["policy_name"],
                 "version": document.metadata["version"],
                 "page_number": page_number,
+                "text": document.page_content,
             }
         )
 
     context = "\n\n".join(context_parts)
 
     prompt = f"""
-Answer the question using only the policy context below.
-If the context does not contain the answer, say that the information was not found.
+You are answering a question about one specific policy version.
+Answer using ONLY the retrieved context below.
+Do NOT use any general knowledge or outside information.
+Never invent facts, policy names, versions, or page numbers.
 
-Policy context:
+If the retrieved context does not contain enough information to answer the question,
+respond with exactly:
+"{INSUFFICIENT_EVIDENCE_ANSWER}"
+
+Retrieved context:
 {context}
 
 Question:
@@ -115,5 +140,5 @@ Question:
 
     return {
         "answer": response.content,
-        "sources": sources,
+        "evidence": evidence,
     }

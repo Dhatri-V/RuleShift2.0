@@ -363,7 +363,30 @@ def compare_policy_versions(
 
 
 @app.post("/ask")
-def ask_policy_question(request: PolicyQuestion):
+def ask_policy_question(
+    request: PolicyQuestion,
+    database: Session = Depends(get_database),
+):
+    policy = (
+        database.query(Policy)
+        .filter(
+            Policy.name == request.policy_name,
+            Policy.version == request.version,
+        )
+        .first()
+    )
+    if not policy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Policy '{request.policy_name}' version '{request.version}' not found.",
+        )
+    if policy.status == POLICY_STATUS_DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy '{request.policy_name}' version '{request.version}' is still DRAFT. "
+                   "Only VERIFIED, CURRENT or SUPERSEDED versions can be queried.",
+        )
+
     try:
         return answer_policy_question(
             request.policy_name,
