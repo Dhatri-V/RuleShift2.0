@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ai.extraction import extract_attendance_rule
 from ai.rag import answer_policy_question, store_policy_pages
+from core.auth import AdminConfigError, create_access_token, require_admin, verify_admin_credentials
 from core.evaluator import check_attendance
 from core.impact import compare_attendance_requirements, compare_rules
 from database.db import Base, SessionLocal, engine
@@ -74,6 +75,11 @@ class PolicyQuestion(BaseModel):
     question: str
 
 
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
+
 def get_database():
     database = SessionLocal()
     try:
@@ -87,8 +93,31 @@ def home():
     return {"message": "RuleShift API is running"}
 
 
+@app.post("/auth/login")
+def admin_login(credentials: AdminLogin):
+    if not verify_admin_credentials(credentials.email, credentials.password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin email or password.",
+        )
+
+    try:
+        access_token = create_access_token(credentials.email)
+    except AdminConfigError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+
 @app.post("/policies")
-def create_policy(policy: PolicyInput, database: Session = Depends(get_database)):
+def create_policy(
+    policy: PolicyInput,
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
     existing = (
         database.query(Policy)
         .filter(Policy.name == policy.name, Policy.version == policy.version)
@@ -149,6 +178,7 @@ async def upload_policy(
     version: str = Form(...),
     file: UploadFile = File(...),
     database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF file.")
@@ -402,6 +432,7 @@ def update_policy_status(
     policy_id: int,
     payload: StatusUpdate,
     database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
 ):
     if payload.status not in POLICY_STATUSES:
         raise HTTPException(
@@ -447,6 +478,7 @@ def update_policy_rule(
     policy_id: int,
     payload: RuleUpdate,
     database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
 ):
     policy = database.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
@@ -471,7 +503,11 @@ def update_policy_rule(
 
 
 @app.post("/policies/{policy_id}/verify")
-def verify_policy(policy_id: int, database: Session = Depends(get_database)):
+def verify_policy(
+    policy_id: int,
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
     policy = database.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found.")
@@ -495,7 +531,11 @@ def verify_policy(policy_id: int, database: Session = Depends(get_database)):
 
 
 @app.post("/policies/{policy_id}/mark-current")
-def mark_policy_current(policy_id: int, database: Session = Depends(get_database)):
+def mark_policy_current(
+    policy_id: int,
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
     policy = database.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found.")

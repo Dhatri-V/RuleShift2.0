@@ -33,6 +33,7 @@ from ai.rag import (
     store_policy_pages,
 )
 from backend.main import app, get_database
+from core.auth import require_admin
 from core.impact import compare_attendance_requirements, compare_rules
 from database.db import Base
 
@@ -97,6 +98,8 @@ def client():
             database.close()
 
     app.dependency_overrides[get_database] = override_database
+    # These tests cover RAG/lifecycle/deterministic rules, not authentication.
+    app.dependency_overrides[require_admin] = lambda: {"sub": "admin", "role": "admin"}
     try:
         with TestClient(app) as test_client:
             yield test_client

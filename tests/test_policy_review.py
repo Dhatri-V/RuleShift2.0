@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.main import app, get_database
+from core.auth import require_admin
 from database.db import Base
 
 
@@ -53,6 +54,8 @@ def client():
             database.close()
 
     app.dependency_overrides[get_database] = override_database
+    # These tests cover lifecycle rules, not authentication.
+    app.dependency_overrides[require_admin] = lambda: {"sub": "admin", "role": "admin"}
     try:
         with TestClient(app) as test_client:
             yield test_client

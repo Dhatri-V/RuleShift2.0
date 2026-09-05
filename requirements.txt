@@ -4,6 +4,7 @@ pydantic
 sqlalchemy
 python-multipart
 httpx
+pyjwt
 PyMuPDF==1.26.1
 langchain==0.3.27
 langchain-ollama==0.3.6
