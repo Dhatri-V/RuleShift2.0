@@ -274,6 +274,124 @@ def test_compare_versions_returns_not_found(client):
     assert response.json()["detail"] == "Policy id 999 not found."
 
 
+def student_impact(client, old_policy, new_policy, attendance):
+    return client.post(
+        "/student-impact",
+        json={
+            "old_policy_id": old_policy["id"],
+            "new_policy_id": new_policy["id"],
+            "attendance": attendance,
+        },
+    )
+
+
+def test_student_impact_pass_to_pass_is_still_compliant(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    new_policy = create_verified(client, version="2026", attendance_requirement=85)
+
+    response = student_impact(client, old_policy, new_policy, 90)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["attendance"] == 90
+    assert data["old_policy"]["result"] == "PASS"
+    assert data["new_policy"]["result"] == "PASS"
+    assert data["impact"] == "STILL_COMPLIANT"
+
+
+def test_student_impact_pass_to_fail_is_newly_non_compliant(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    new_policy = create_verified(client, version="2026", attendance_requirement=85)
+
+    response = student_impact(client, old_policy, new_policy, 80)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["attendance"] == 80
+    assert data["old_policy"]["result"] == "PASS"
+    assert data["new_policy"]["result"] == "FAIL"
+    assert data["impact"] == "NEWLY_NON_COMPLIANT"
+
+
+def test_student_impact_fail_to_pass_is_newly_compliant(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=85)
+    new_policy = create_verified(client, version="2026", attendance_requirement=75)
+
+    response = student_impact(client, old_policy, new_policy, 80)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["attendance"] == 80
+    assert data["old_policy"]["result"] == "FAIL"
+    assert data["new_policy"]["result"] == "PASS"
+    assert data["impact"] == "NEWLY_COMPLIANT"
+
+
+def test_student_impact_fail_to_fail_is_still_non_compliant(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=85)
+    new_policy = create_verified(client, version="2026", attendance_requirement=75)
+
+    response = student_impact(client, old_policy, new_policy, 70)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["attendance"] == 70
+    assert data["old_policy"]["result"] == "FAIL"
+    assert data["new_policy"]["result"] == "FAIL"
+    assert data["impact"] == "STILL_NON_COMPLIANT"
+
+
+def test_student_impact_rejects_draft_policy(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    draft_policy = create_draft(client, version="2026", attendance_requirement=85)
+
+    response = student_impact(client, old_policy, draft_policy, 80)
+
+    assert response.status_code == 409
+    assert "DRAFT" in response.json()["detail"]
+
+
+def test_student_impact_rejects_different_policy_names(client):
+    first_policy = create_verified(client, version="2025", attendance_requirement=75)
+    second_policy = create_verified(
+        client,
+        version="2026",
+        attendance_requirement=85,
+        name="Different Policy",
+    )
+
+    response = student_impact(client, first_policy, second_policy, 80)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only versions of the same policy can be compared."
+
+
+@pytest.mark.parametrize("attendance", [-0.1, 100.1])
+def test_student_impact_rejects_invalid_attendance(client, attendance):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    new_policy = create_verified(client, version="2026", attendance_requirement=85)
+
+    response = student_impact(client, old_policy, new_policy, attendance)
+
+    assert response.status_code == 422
+
+
+def test_student_impact_returns_not_found(client):
+    policy = create_verified(client, version="2026", attendance_requirement=80)
+
+    response = client.post(
+        "/student-impact",
+        json={
+            "old_policy_id": policy["id"],
+            "new_policy_id": 999,
+            "attendance": 80,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Policy id 999 not found."
+
+
 @pytest.mark.parametrize(
     ("method", "path", "payload"),
     [
