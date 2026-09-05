@@ -60,6 +60,15 @@ def store_policy_pages(policy_name, version, pages):
     return len(chunks)
 
 
+def delete_policy_chunks(policy_name, version):
+    """Remove every chunk belonging to one policy version from Chroma.
+
+    Used when a DRAFT policy is deleted so no orphaned RAG data remains.
+    """
+    vector_store = get_vector_store()
+    vector_store.delete(where=version_filter(policy_name, version))
+
+
 def version_filter(policy_name, version):
     return {
         "$and": [

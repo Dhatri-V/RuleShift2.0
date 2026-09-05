@@ -517,6 +517,16 @@ form > button:hover:not(:disabled) {
   background: #eaf2ed;
 }
 
+.review-actions .danger-button {
+  border: 1px solid #e3b7ae;
+  background: transparent;
+  color: #a44434;
+}
+
+.review-actions .danger-button:hover:not(:disabled) {
+  background: #fff0ec;
+}
+
 .review-empty {
   min-height: 100px;
 }

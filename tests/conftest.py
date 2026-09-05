@@ -9,11 +9,11 @@ import os
 
 import pytest
 
-from core.auth import (
+from core.auth import require_admin
+from core.config import (
     ADMIN_EMAIL_ENV,
     ADMIN_PASSWORD_ENV,
     JWT_SECRET_ENV,
-    require_admin,
 )
 
 TEST_ADMIN_EMAIL = "admin@ruleshift.test"

@@ -7,8 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ai.extraction import extract_attendance_rule
-from ai.rag import answer_policy_question, store_policy_pages
-from core.auth import AdminConfigError, create_access_token, require_admin, verify_admin_credentials
+from ai.rag import answer_policy_question, delete_policy_chunks, store_policy_pages
+from core.auth import create_access_token, require_admin, verify_admin_credentials
+from core.config import ConfigError, get_max_upload_bytes
 from core.evaluator import check_attendance
 from core.impact import compare_attendance_requirements, compare_rules
 from database.db import Base, SessionLocal, engine
@@ -20,11 +21,12 @@ from database.models import (
     POLICY_STATUSES,
     Policy,
 )
-from services.pdf_service import extract_pdf_pages
+from services.pdf_service import PdfValidationError, extract_pdf_pages
 
 
-Base.metadata.create_all(bind=engine)
-
+# Schema is managed by Alembic migrations (see alembic/). We do NOT call
+# Base.metadata.create_all here so that startup never silently creates or
+# alters schema outside of migrations. Run `alembic upgrade head` instead.
 app = FastAPI(title="RuleShift API")
 
 app.add_middleware(
@@ -103,7 +105,7 @@ def admin_login(credentials: AdminLogin):
 
     try:
         access_token = create_access_token(credentials.email)
-    except AdminConfigError as error:
+    except ConfigError as error:
         raise HTTPException(status_code=503, detail=str(error))
 
     return {
@@ -181,7 +183,33 @@ async def upload_policy(
     admin: dict = Depends(require_admin),
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a PDF file (.pdf extension required).",
+        )
+
+    pdf_bytes = await file.read()
+
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    max_upload_bytes = get_max_upload_bytes()
+    if len(pdf_bytes) > max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "The PDF is too large. Maximum upload size is "
+                f"{get_max_upload_bytes() // (1024 * 1024)} MB."
+            ),
+        )
+
+    # Reject files that do not even look like a PDF before spending time on
+    # full parsing; PyMuPDF still validates the full structure afterwards.
+    if not pdf_bytes.lstrip().startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is not a valid PDF document.",
+        )
 
     existing = (
         database.query(Policy)
@@ -191,25 +219,50 @@ async def upload_policy(
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"Policy '{policy_name}' version '{version}' already exists.",
+            detail=(
+                f"Policy '{policy_name}' version '{version}' already exists. "
+                "Choose a different version number; existing policies are never overwritten."
+            ),
         )
-
-    pdf_bytes = await file.read()
 
     try:
         pages = extract_pdf_pages(pdf_bytes)
-    except Exception as error:
-        raise HTTPException(status_code=400, detail=f"Could not read PDF: {error}")
+    except PdfValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    # Keep only pages with extractable text, but preserve their original
+    # page numbers so RAG evidence always cites the real PDF page.
+    text_pages = [page for page in pages if page["text"]]
+
+    if not text_pages:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The PDF does not contain any extractable text. "
+                "Scanned image-only PDFs are not supported; "
+                "please upload a text-based PDF."
+            ),
+        )
 
     policy_text = "\n\n".join(
-        f"Page {page['page_number']}:\n{page['text']}" for page in pages
+        f"Page {page['page_number']}:\n{page['text']}" for page in text_pages
     )
-
-    if not any(page["text"] for page in pages):
-        raise HTTPException(status_code=400, detail="The PDF does not contain readable text.")
 
     try:
         rule = extract_attendance_rule(policy_text)
+    except Exception as error:
+        # Extraction failed: fail cleanly without creating a policy with an
+        # invented or misleading attendance value.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not extract the attendance rule from this PDF. "
+                "No policy was created. Please try again later. "
+                f"(Local AI service error: {error})"
+            ),
+        )
+
+    try:
         chunk_count = store_policy_pages(policy_name, version, pages)
     except Exception as error:
         raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
@@ -239,6 +292,44 @@ async def upload_policy(
         "status": new_policy.status,
         "page_count": len(pages),
         "chunk_count": chunk_count,
+    }
+
+
+@app.delete("/policies/{policy_id}")
+def delete_draft_policy(
+    policy_id: int,
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
+    policy = database.query(Policy).filter(Policy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found.")
+
+    if policy.status != POLICY_STATUS_DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Only DRAFT policies can be deleted. "
+                f"Policy '{policy.name}' version '{policy.version}' is {policy.status}."
+            ),
+        )
+
+    # Remove the derived RAG index entries first so no orphaned chunks remain
+    # if the SQLite delete fails; SQLite stays the authoritative record.
+    try:
+        delete_policy_chunks(policy.name, policy.version)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
+
+    database.delete(policy)
+    database.commit()
+
+    return {
+        "id": policy_id,
+        "name": policy.name,
+        "version": policy.version,
+        "status": POLICY_STATUS_DRAFT,
+        "deleted": True,
     }
 
 

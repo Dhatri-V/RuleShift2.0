@@ -145,6 +145,35 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     }
   }
 
+  async function handleDelete(policy) {
+    const confirmed = window.confirm(
+      `Delete draft policy "${policy.name}" version ${policy.version}? ` +
+        "This removes the draft and its indexed text and cannot be undone.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setReviewingPolicyId(policy.id);
+    setReviewMessage({ type: "", text: "" });
+
+    try {
+      const data = await apiRequest(`/policies/${policy.id}`, {
+        method: "DELETE",
+        headers: adminHeaders(adminToken),
+      });
+      setReviewMessage({
+        type: "success",
+        text: `${data.name} ${data.version} deleted.`,
+      });
+      await onLoadPolicies();
+    } catch (error) {
+      setReviewMessage({ type: "error", text: error.message });
+    } finally {
+      setReviewingPolicyId(null);
+    }
+  }
+
   return (
     <>
       <section className="panel upload-panel">
@@ -312,6 +341,15 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
                       {reviewingPolicyId === policy.id && !hasUnsavedRule
                         ? "Verifying…"
                         : "Verify"}
+                    </button>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      disabled={reviewBusy}
+                      onClick={() => handleDelete(policy)}
+                      title="Delete this draft policy and its indexed text."
+                    >
+                      {reviewingPolicyId === policy.id ? "Deleting…" : "Delete"}
                     </button>
                   </div>
                 </form>

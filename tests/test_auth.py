@@ -16,12 +16,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.main import app, get_database
 from conftest import TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD
-from core.auth import (
-    JWT_ALGORITHM,
-    TOKEN_EXPIRE_MINUTES,
-    create_access_token,
-    require_admin,
-)
+from core.auth import JWT_ALGORITHM
+from core.config import DEFAULT_JWT_EXPIRE_MINUTES
 from database.db import Base
 
 
@@ -123,7 +119,7 @@ def test_token_contains_expiry_and_admin_role(client):
     assert payload["sub"] == TEST_ADMIN_EMAIL
     exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
     iat = datetime.fromtimestamp(payload["iat"], tz=timezone.utc)
-    assert exp - iat == timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    assert exp - iat == timedelta(minutes=DEFAULT_JWT_EXPIRE_MINUTES)
 
 
 # ---------------------------------------------------------------------------
