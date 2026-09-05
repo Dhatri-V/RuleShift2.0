@@ -35,17 +35,40 @@ def client():
         test_engine.dispose()
 
 
-def create_draft(client, version="2026", attendance_requirement=80):
+def create_draft(
+    client,
+    version="2026",
+    attendance_requirement=80,
+    name="Academic Attendance Policy",
+):
     response = client.post(
         "/policies",
         json={
-            "name": "Academic Attendance Policy",
+            "name": name,
             "version": version,
             "attendance_requirement": attendance_requirement,
         },
     )
     assert response.status_code == 200
     assert response.json()["status"] == "DRAFT"
+    return response.json()
+
+
+def create_verified(
+    client,
+    version="2026",
+    attendance_requirement=80,
+    name="Academic Attendance Policy",
+):
+    policy = create_draft(
+        client,
+        version=version,
+        attendance_requirement=attendance_requirement,
+        name=name,
+    )
+    response = client.post(f"/policies/{policy['id']}/verify")
+    assert response.status_code == 200
+    assert response.json()["status"] == "VERIFIED"
     return response.json()
 
 
@@ -145,6 +168,110 @@ def test_marking_verified_policy_current_supersedes_previous_current(client):
         policy["id"]: policy for policy in client.get("/policies").json()
     }
     assert policies_by_id[previous_policy["id"]]["status"] == "SUPERSEDED"
+
+
+def test_compare_versions_shows_increased_requirement(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    new_policy = create_verified(client, version="2026", attendance_requirement=85)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": old_policy["id"], "new_policy_id": new_policy["id"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["direction"] == "INCREASED"
+    assert data["difference"] == 10.0
+    assert data["old_policy"]["attendance_requirement"] == 75
+    assert data["new_policy"]["attendance_requirement"] == 85
+
+
+def test_compare_versions_shows_decreased_requirement(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=85)
+    new_policy = create_verified(client, version="2026", attendance_requirement=75)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": old_policy["id"], "new_policy_id": new_policy["id"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["direction"] == "DECREASED"
+    assert data["difference"] == -10.0
+    assert data["old_policy"]["attendance_requirement"] == 85
+    assert data["new_policy"]["attendance_requirement"] == 75
+
+
+def test_compare_versions_shows_unchanged_requirement(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=80)
+    new_policy = create_verified(client, version="2026", attendance_requirement=80)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": old_policy["id"], "new_policy_id": new_policy["id"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["direction"] == "UNCHANGED"
+    assert data["difference"] == 0.0
+
+
+def test_compare_versions_rejects_draft_policies(client):
+    old_policy = create_verified(client, version="2025", attendance_requirement=75)
+    draft_policy = create_draft(client, version="2026", attendance_requirement=85)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": old_policy["id"], "new_policy_id": draft_policy["id"]},
+    )
+
+    assert response.status_code == 409
+    assert "DRAFT" in response.json()["detail"]
+
+
+def test_compare_versions_rejects_same_policy(client):
+    policy = create_verified(client, version="2026", attendance_requirement=80)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": policy["id"], "new_policy_id": policy["id"]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Old and new policy versions must be different."
+
+
+def test_compare_versions_rejects_different_policy_names(client):
+    first_policy = create_verified(client, version="2025", attendance_requirement=75)
+    second_policy = create_verified(
+        client,
+        version="2026",
+        attendance_requirement=85,
+        name="Different Policy",
+    )
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": first_policy["id"], "new_policy_id": second_policy["id"]},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only versions of the same policy can be compared."
+
+
+def test_compare_versions_returns_not_found(client):
+    policy = create_verified(client, version="2026", attendance_requirement=80)
+
+    response = client.post(
+        "/compare-versions",
+        json={"old_policy_id": policy["id"], "new_policy_id": 999},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Policy id 999 not found."
 
 
 @pytest.mark.parametrize(

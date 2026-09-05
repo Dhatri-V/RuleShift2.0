@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ai.extraction import extract_attendance_rule
 from ai.rag import answer_policy_question, store_policy_pages
-from core.impact import compare_rules
+from core.impact import compare_attendance_requirements, compare_rules
 from database.db import Base, SessionLocal, engine
 from database.models import (
     POLICY_STATUS_CURRENT,
@@ -54,6 +54,11 @@ class CompareInput(BaseModel):
     attendance: Optional[float] = None
     old_attendance_requirement: float
     new_attendance_requirement: float
+
+
+class PolicyComparisonInput(BaseModel):
+    old_policy_id: int
+    new_policy_id: int
 
 
 class PolicyQuestion(BaseModel):
@@ -209,6 +214,76 @@ def compare_policy_rules(comparison: CompareInput):
     )
 
     return {"result": result}
+
+
+@app.post("/compare-versions")
+def compare_policy_versions(
+    comparison: PolicyComparisonInput,
+    database: Session = Depends(get_database),
+):
+    if comparison.old_policy_id == comparison.new_policy_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Old and new policy versions must be different.",
+        )
+
+    old_policy = database.query(Policy).filter(Policy.id == comparison.old_policy_id).first()
+    if not old_policy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Policy id {comparison.old_policy_id} not found.",
+        )
+
+    new_policy = database.query(Policy).filter(Policy.id == comparison.new_policy_id).first()
+    if not new_policy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Policy id {comparison.new_policy_id} not found.",
+        )
+
+    if old_policy.name != new_policy.name:
+        raise HTTPException(
+            status_code=400,
+            detail="Only versions of the same policy can be compared.",
+        )
+
+    for policy, label in ((old_policy, "Old"), (new_policy, "New")):
+        if policy.status == POLICY_STATUS_DRAFT:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{label} policy version {policy.version} is still DRAFT. "
+                       "Only VERIFIED, CURRENT or SUPERSEDED versions can be compared.",
+            )
+
+    if old_policy.attendance_requirement is None or new_policy.attendance_requirement is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Both policy versions must have a verified attendance requirement.",
+        )
+
+    result = compare_attendance_requirements(
+        old_policy.attendance_requirement,
+        new_policy.attendance_requirement,
+    )
+
+    return {
+        "old_policy": {
+            "id": old_policy.id,
+            "name": old_policy.name,
+            "version": old_policy.version,
+            "attendance_requirement": old_policy.attendance_requirement,
+            "status": old_policy.status,
+        },
+        "new_policy": {
+            "id": new_policy.id,
+            "name": new_policy.name,
+            "version": new_policy.version,
+            "attendance_requirement": new_policy.attendance_requirement,
+            "status": new_policy.status,
+        },
+        "direction": result["direction"],
+        "difference": result["difference"],
+    }
 
 
 @app.post("/ask")

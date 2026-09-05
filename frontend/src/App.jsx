@@ -11,6 +11,12 @@ const IMPACT_STYLES = {
   MORE_INFORMATION_REQUIRED: "impact-warning",
 };
 
+const DIRECTION_STYLES = {
+  INCREASED: "compare-direction-increased",
+  DECREASED: "compare-direction-decreased",
+  UNCHANGED: "compare-direction-unchanged",
+};
+
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, options);
@@ -52,11 +58,10 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState({ type: "", text: "" });
 
-  const [attendance, setAttendance] = useState("");
-  const [oldRequirement, setOldRequirement] = useState("");
-  const [newRequirement, setNewRequirement] = useState("");
+  const [oldPolicyId, setOldPolicyId] = useState("");
+  const [newPolicyId, setNewPolicyId] = useState("");
   const [comparing, setComparing] = useState(false);
-  const [impactResult, setImpactResult] = useState("");
+  const [versionComparison, setVersionComparison] = useState(null);
   const [compareMessage, setCompareMessage] = useState({ type: "", text: "" });
 
   const [questionPolicy, setQuestionPolicy] = useState("");
@@ -186,21 +191,20 @@ function App() {
   async function handleCompare(event) {
     event.preventDefault();
     setComparing(true);
-    setImpactResult("");
+    setVersionComparison(null);
     setCompareMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest("/compare", {
+      const data = await apiRequest("/compare-versions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          attendance: attendance === "" ? null : Number(attendance),
-          old_attendance_requirement: Number(oldRequirement),
-          new_attendance_requirement: Number(newRequirement),
+          old_policy_id: Number(oldPolicyId),
+          new_policy_id: Number(newPolicyId),
         }),
       });
 
-      setImpactResult(data.result);
+      setVersionComparison(data);
     } catch (error) {
       setCompareMessage({ type: "error", text: error.message });
     } finally {
@@ -236,6 +240,15 @@ function App() {
   }
 
   const draftPolicies = policies.filter((policy) => policy.status === "DRAFT");
+
+  const comparablePolicies = policies.filter((policy) => policy.status !== "DRAFT");
+  const oldPolicy = comparablePolicies.find(
+    (policy) => String(policy.id) === String(oldPolicyId),
+  );
+  const newPolicyOptions = comparablePolicies.filter(
+    (policy) =>
+      policy.name === oldPolicy?.name && String(policy.id) !== String(oldPolicyId),
+  );
 
   return (
     <div className="app-shell">
@@ -446,76 +459,101 @@ function App() {
             <div className="panel-heading">
               <span className="step">03</span>
               <div>
-                <h3>Compare rules</h3>
-                <p>Calculate student impact with deterministic logic.</p>
+                <h3>Compare policy versions</h3>
+                <p>Compare verified attendance rules stored in SQLite.</p>
               </div>
             </div>
 
             <form onSubmit={handleCompare}>
-              <div className="form-row three-columns">
+              <div className="form-row">
                 <label>
-                  Student attendance
-                  <div className="number-field">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={attendance}
-                      onChange={(event) => setAttendance(event.target.value)}
-                      placeholder="80"
-                    />
-                    <span>%</span>
-                  </div>
+                  Old policy version
+                  <select
+                    value={oldPolicyId}
+                    onChange={(event) => {
+                      setOldPolicyId(event.target.value);
+                      setNewPolicyId("");
+                      setVersionComparison(null);
+                    }}
+                    required
+                  >
+                    <option value="">Select a version…</option>
+                    {comparablePolicies.map((policy) => (
+                      <option key={policy.id} value={policy.id}>
+                        {policy.name} · {policy.version} ({policy.status})
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
-                  Old requirement
-                  <div className="number-field">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={oldRequirement}
-                      onChange={(event) => setOldRequirement(event.target.value)}
-                      placeholder="75"
-                      required
-                    />
-                    <span>%</span>
-                  </div>
-                </label>
-                <label>
-                  New requirement
-                  <div className="number-field">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={newRequirement}
-                      onChange={(event) => setNewRequirement(event.target.value)}
-                      placeholder="85"
-                      required
-                    />
-                    <span>%</span>
-                  </div>
+                  New policy version
+                  <select
+                    value={newPolicyId}
+                    onChange={(event) => {
+                      setNewPolicyId(event.target.value);
+                      setVersionComparison(null);
+                    }}
+                    disabled={!oldPolicy}
+                    required
+                  >
+                    <option value="">
+                      {oldPolicy ? "Select a newer version…" : "Select old version first…"}
+                    </option>
+                    {newPolicyOptions.map((policy) => (
+                      <option key={policy.id} value={policy.id}>
+                        {policy.version} ({policy.status}) — {policy.attendance_requirement}%
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
-              <button type="submit" disabled={comparing}>
-                {comparing ? "Comparing…" : "Compare impact"}
+              <button type="submit" disabled={comparing || !oldPolicy || !newPolicyId}>
+                {comparing ? "Comparing…" : "Compare versions"}
               </button>
               <Message message={compareMessage} />
             </form>
 
-            {impactResult && (
+            {versionComparison && (
               <div
-                className={`impact-result ${IMPACT_STYLES[impactResult] || ""}`}
+                className={`version-compare-result ${DIRECTION_STYLES[versionComparison.direction] || ""}`}
                 aria-live="polite"
               >
-                <span>Impact result</span>
-                <strong>{impactResult.replaceAll("_", " ")}</strong>
-                <code>{impactResult}</code>
+                {versionComparison.direction === "UNCHANGED" ? (
+                  <>
+                    <span>Requirement unchanged</span>
+                    <div className="compare-numbers">
+                      <strong>{versionComparison.old_policy.attendance_requirement}%</strong>
+                      <span className="compare-arrow">→</span>
+                      <strong>{versionComparison.new_policy.attendance_requirement}%</strong>
+                      <span className="compare-delta">(0%)</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      Requirement {versionComparison.direction === "INCREASED" ? "increased" : "decreased"}
+                    </span>
+                    <div className="compare-numbers">
+                      <strong>{versionComparison.old_policy.attendance_requirement}%</strong>
+                      <span className="compare-arrow">→</span>
+                      <strong>{versionComparison.new_policy.attendance_requirement}%</strong>
+                      <span className="compare-delta">
+                        ({versionComparison.difference > 0 ? "+" : ""}{versionComparison.difference}%)
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="compare-policy-names">
+                  <span>
+                    {versionComparison.old_policy.version} ({versionComparison.old_policy.status})
+                  </span>
+                  <span className="compare-arrow">→</span>
+                  <span>
+                    {versionComparison.new_policy.version} ({versionComparison.new_policy.status})
+                  </span>
+                </div>
+                <code>{versionComparison.direction}</code>
               </div>
             )}
           </section>
