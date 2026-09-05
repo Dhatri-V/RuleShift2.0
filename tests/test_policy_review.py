@@ -23,6 +23,7 @@ FAKE_ANSWER = {
 }
 
 
+
 def ask(client, policy_name, version, question="What attendance is required?"):
     return client.post(
         "/ask",
