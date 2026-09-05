@@ -399,6 +399,16 @@ form > button:hover:not(:disabled) {
   font-size: 1rem;
 }
 
+.policy-item .status {
+  text-align: right;
+}
+
+.policy-item .status span {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .empty-state {
   min-height: 178px;
   display: grid;

@@ -3,13 +3,14 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ai.extraction import extract_attendance_rule
 from ai.rag import answer_policy_question, store_policy_pages
 from core.impact import compare_rules
 from database.db import Base, SessionLocal, engine
-from database.models import Policy
+from database.models import POLICY_STATUS_DRAFT, POLICY_STATUSES, Policy
 from services.pdf_service import extract_pdf_pages
 
 
@@ -30,7 +31,12 @@ app.add_middleware(
 
 class PolicyInput(BaseModel):
     name: str
+    version: str
     attendance_requirement: float
+
+
+class StatusUpdate(BaseModel):
+    status: str
 
 
 class CompareInput(BaseModel):
@@ -60,19 +66,41 @@ def home():
 
 @app.post("/policies")
 def create_policy(policy: PolicyInput, database: Session = Depends(get_database)):
+    existing = (
+        database.query(Policy)
+        .filter(Policy.name == policy.name, Policy.version == policy.version)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy '{policy.name}' version '{policy.version}' already exists.",
+        )
+
     new_policy = Policy(
         name=policy.name,
+        version=policy.version,
         attendance_requirement=policy.attendance_requirement,
+        status=POLICY_STATUS_DRAFT,
     )
 
     database.add(new_policy)
-    database.commit()
+    try:
+        database.commit()
+    except IntegrityError:
+        database.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy '{policy.name}' version '{policy.version}' already exists.",
+        )
     database.refresh(new_policy)
 
     return {
         "id": new_policy.id,
         "name": new_policy.name,
+        "version": new_policy.version,
         "attendance_requirement": new_policy.attendance_requirement,
+        "status": new_policy.status,
     }
 
 
@@ -84,7 +112,9 @@ def get_policies(database: Session = Depends(get_database)):
         {
             "id": policy.id,
             "name": policy.name,
+            "version": policy.version,
             "attendance_requirement": policy.attendance_requirement,
+            "status": policy.status,
         }
         for policy in policies
     ]
@@ -99,6 +129,17 @@ async def upload_policy(
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+
+    existing = (
+        database.query(Policy)
+        .filter(Policy.name == policy_name, Policy.version == version)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy '{policy_name}' version '{version}' already exists.",
+        )
 
     pdf_bytes = await file.read()
 
@@ -122,10 +163,19 @@ async def upload_policy(
 
     new_policy = Policy(
         name=policy_name,
+        version=version,
         attendance_requirement=rule.attendance_requirement,
+        status=POLICY_STATUS_DRAFT,
     )
     database.add(new_policy)
-    database.commit()
+    try:
+        database.commit()
+    except IntegrityError:
+        database.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy '{policy_name}' version '{version}' already exists.",
+        )
     database.refresh(new_policy)
 
     return {
@@ -133,6 +183,7 @@ async def upload_policy(
         "name": policy_name,
         "version": version,
         "attendance_requirement": rule.attendance_requirement,
+        "status": new_policy.status,
         "page_count": len(pages),
         "chunk_count": chunk_count,
     }
@@ -159,3 +210,69 @@ def ask_policy_question(request: PolicyQuestion):
         )
     except Exception as error:
         raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
+
+
+@app.patch("/policies/{policy_id}/status")
+def update_policy_status(
+    policy_id: int,
+    payload: StatusUpdate,
+    database: Session = Depends(get_database),
+):
+    if payload.status not in POLICY_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status must be one of: {', '.join(POLICY_STATUSES)}",
+        )
+
+    policy = database.query(Policy).filter(Policy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found.")
+
+    policy.status = payload.status
+    database.commit()
+    database.refresh(policy)
+
+    return {
+        "id": policy.id,
+        "name": policy.name,
+        "version": policy.version,
+        "attendance_requirement": policy.attendance_requirement,
+        "status": policy.status,
+    }
+
+
+@app.post("/policies/{policy_id}/mark-current")
+def mark_policy_current(policy_id: int, database: Session = Depends(get_database)):
+    policy = database.query(Policy).filter(Policy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found.")
+
+    # Find whichever other version of this same policy is currently CURRENT,
+    # regardless of its version string, and supersede it. We never compare
+    # version strings numerically to decide "old" vs "new".
+    previous_current = (
+        database.query(Policy)
+        .filter(
+            Policy.name == policy.name,
+            Policy.status == "CURRENT",
+            Policy.id != policy.id,
+        )
+        .first()
+    )
+
+    if previous_current:
+        previous_current.status = "SUPERSEDED"
+
+    policy.status = "CURRENT"
+    database.commit()
+    database.refresh(policy)
+
+    return {
+        "id": policy.id,
+        "name": policy.name,
+        "version": policy.version,
+        "attendance_requirement": policy.attendance_requirement,
+        "status": policy.status,
+        "superseded_id": previous_current.id if previous_current else None,
+        "superseded_version": previous_current.version if previous_current else None,
+    }

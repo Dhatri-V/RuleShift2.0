@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8002";
 
 const IMPACT_STYLES = {
   NEWLY_NON_COMPLIANT: "impact-negative",
@@ -286,11 +286,14 @@ function App() {
                   <article className="policy-item" key={policy.id}>
                     <div>
                       <strong>{policy.name}</strong>
-                      <span>Policy #{policy.id}</span>
+                      <span>Version {policy.version}</span>
                     </div>
                     <div className="requirement">
                       <strong>{policy.attendance_requirement}%</strong>
                       <span>required</span>
+                    </div>
+                    <div className="status">
+                      <span>{policy.status}</span>
                     </div>
                   </article>
                 ))}
