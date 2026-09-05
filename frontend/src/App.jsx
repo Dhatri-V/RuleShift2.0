@@ -41,6 +41,9 @@ function App() {
   const [apiOnline, setApiOnline] = useState(false);
   const [policies, setPolicies] = useState([]);
   const [policyListError, setPolicyListError] = useState("");
+  const [draftRuleValues, setDraftRuleValues] = useState({});
+  const [reviewingPolicyId, setReviewingPolicyId] = useState(null);
+  const [reviewMessage, setReviewMessage] = useState({ type: "", text: "" });
 
   const [policyName, setPolicyName] = useState("");
   const [policyVersion, setPolicyVersion] = useState("");
@@ -68,6 +71,13 @@ function App() {
     try {
       const data = await apiRequest("/policies");
       setPolicies(data);
+      setDraftRuleValues(
+        Object.fromEntries(
+          data
+            .filter((policy) => policy.status === "DRAFT")
+            .map((policy) => [policy.id, String(policy.attendance_requirement)]),
+        ),
+      );
       setPolicyListError("");
       setApiOnline(true);
     } catch (error) {
@@ -128,6 +138,51 @@ function App() {
     }
   }
 
+  async function handleRuleUpdate(event, policy) {
+    event.preventDefault();
+    setReviewingPolicyId(policy.id);
+    setReviewMessage({ type: "", text: "" });
+
+    try {
+      const data = await apiRequest(`/policies/${policy.id}/rule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attendance_requirement: Number(draftRuleValues[policy.id]),
+        }),
+      });
+      setReviewMessage({
+        type: "success",
+        text: `${data.name} ${data.version} updated to ${data.attendance_requirement}% attendance.`,
+      });
+      await loadPolicies();
+    } catch (error) {
+      setReviewMessage({ type: "error", text: error.message });
+    } finally {
+      setReviewingPolicyId(null);
+    }
+  }
+
+  async function handleVerify(policy) {
+    setReviewingPolicyId(policy.id);
+    setReviewMessage({ type: "", text: "" });
+
+    try {
+      const data = await apiRequest(`/policies/${policy.id}/verify`, {
+        method: "POST",
+      });
+      setReviewMessage({
+        type: "success",
+        text: `${data.name} ${data.version} verified.`,
+      });
+      await loadPolicies();
+    } catch (error) {
+      setReviewMessage({ type: "error", text: error.message });
+    } finally {
+      setReviewingPolicyId(null);
+    }
+  }
+
   async function handleCompare(event) {
     event.preventDefault();
     setComparing(true);
@@ -179,6 +234,8 @@ function App() {
       setAsking(false);
     }
   }
+
+  const draftPolicies = policies.filter((policy) => policy.status === "DRAFT");
 
   return (
     <div className="app-shell">
@@ -299,6 +356,90 @@ function App() {
                 ))}
               </div>
             )}
+          </section>
+
+          <section className="panel admin-panel">
+            <div className="panel-heading">
+              <span className="step">AR</span>
+              <div>
+                <h3>Admin review</h3>
+                <p>Correct extracted attendance rules before verification.</p>
+              </div>
+            </div>
+
+            {draftPolicies.length === 0 ? (
+              <div className="empty-state review-empty">No draft policies awaiting review.</div>
+            ) : (
+              <div className="review-list">
+                {draftPolicies.map((policy) => {
+                  const ruleValue = draftRuleValues[policy.id] ?? "";
+                  const numericRuleValue = Number(ruleValue);
+                  const invalidRule =
+                    ruleValue === "" ||
+                    !Number.isFinite(numericRuleValue) ||
+                    numericRuleValue < 0 ||
+                    numericRuleValue > 100;
+                  const hasUnsavedRule =
+                    !invalidRule && numericRuleValue !== policy.attendance_requirement;
+                  const reviewBusy = reviewingPolicyId !== null;
+
+                  return (
+                    <form
+                      className="review-item"
+                      key={policy.id}
+                      onSubmit={(event) => handleRuleUpdate(event, policy)}
+                    >
+                      <div className="review-policy">
+                        <strong>{policy.name}</strong>
+                        <span>Version {policy.version} · DRAFT</span>
+                      </div>
+                      <label>
+                        Attendance requirement
+                        <div className="number-field">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={ruleValue}
+                            onChange={(event) =>
+                              setDraftRuleValues((currentValues) => ({
+                                ...currentValues,
+                                [policy.id]: event.target.value,
+                              }))
+                            }
+                            required
+                          />
+                          <span>%</span>
+                        </div>
+                      </label>
+                      <div className="review-actions">
+                        <button
+                          type="submit"
+                          disabled={reviewBusy || invalidRule || !hasUnsavedRule}
+                        >
+                          {reviewingPolicyId === policy.id && hasUnsavedRule
+                            ? "Saving…"
+                            : "Save correction"}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          disabled={reviewBusy || invalidRule || hasUnsavedRule}
+                          onClick={() => handleVerify(policy)}
+                          title={hasUnsavedRule ? "Save the correction before verifying." : ""}
+                        >
+                          {reviewingPolicyId === policy.id && !hasUnsavedRule
+                            ? "Verifying…"
+                            : "Verify"}
+                        </button>
+                      </div>
+                    </form>
+                  );
+                })}
+              </div>
+            )}
+            <Message message={reviewMessage} />
           </section>
 
           <section className="panel compare-panel">

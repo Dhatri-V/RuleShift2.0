@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,14 @@ from ai.extraction import extract_attendance_rule
 from ai.rag import answer_policy_question, store_policy_pages
 from core.impact import compare_rules
 from database.db import Base, SessionLocal, engine
-from database.models import POLICY_STATUS_DRAFT, POLICY_STATUSES, Policy
+from database.models import (
+    POLICY_STATUS_CURRENT,
+    POLICY_STATUS_DRAFT,
+    POLICY_STATUS_SUPERSEDED,
+    POLICY_STATUS_VERIFIED,
+    POLICY_STATUSES,
+    Policy,
+)
 from services.pdf_service import extract_pdf_pages
 
 
@@ -37,6 +44,10 @@ class PolicyInput(BaseModel):
 
 class StatusUpdate(BaseModel):
     status: str
+
+
+class RuleUpdate(BaseModel):
+    attendance_requirement: float = Field(ge=0, le=100)
 
 
 class CompareInput(BaseModel):
@@ -228,7 +239,75 @@ def update_policy_status(
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found.")
 
+    if payload.status == POLICY_STATUS_VERIFIED:
+        raise HTTPException(
+            status_code=400,
+            detail="Use the verify endpoint to verify a policy.",
+        )
+    if payload.status == POLICY_STATUS_CURRENT:
+        raise HTTPException(
+            status_code=400,
+            detail="Use the mark-current endpoint to make a policy current.",
+        )
+    if payload.status == POLICY_STATUS_DRAFT and policy.status != POLICY_STATUS_DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail="A policy cannot return to DRAFT after review.",
+        )
+
     policy.status = payload.status
+    database.commit()
+    database.refresh(policy)
+
+    return {
+        "id": policy.id,
+        "name": policy.name,
+        "version": policy.version,
+        "attendance_requirement": policy.attendance_requirement,
+        "status": policy.status,
+    }
+
+
+@app.patch("/policies/{policy_id}/rule")
+def update_policy_rule(
+    policy_id: int,
+    payload: RuleUpdate,
+    database: Session = Depends(get_database),
+):
+    policy = database.query(Policy).filter(Policy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found.")
+    if policy.status != POLICY_STATUS_DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail="Only DRAFT policies can have their rule edited.",
+        )
+
+    policy.attendance_requirement = payload.attendance_requirement
+    database.commit()
+    database.refresh(policy)
+
+    return {
+        "id": policy.id,
+        "name": policy.name,
+        "version": policy.version,
+        "attendance_requirement": policy.attendance_requirement,
+        "status": policy.status,
+    }
+
+
+@app.post("/policies/{policy_id}/verify")
+def verify_policy(policy_id: int, database: Session = Depends(get_database)):
+    policy = database.query(Policy).filter(Policy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found.")
+    if policy.status != POLICY_STATUS_DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail="Only DRAFT policies can be verified.",
+        )
+
+    policy.status = POLICY_STATUS_VERIFIED
     database.commit()
     database.refresh(policy)
 
@@ -246,6 +325,11 @@ def mark_policy_current(policy_id: int, database: Session = Depends(get_database
     policy = database.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found.")
+    if policy.status != POLICY_STATUS_VERIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail="Only VERIFIED policies can be marked CURRENT.",
+        )
 
     # Find whichever other version of this same policy is currently CURRENT,
     # regardless of its version string, and supersede it. We never compare
@@ -254,16 +338,16 @@ def mark_policy_current(policy_id: int, database: Session = Depends(get_database
         database.query(Policy)
         .filter(
             Policy.name == policy.name,
-            Policy.status == "CURRENT",
+            Policy.status == POLICY_STATUS_CURRENT,
             Policy.id != policy.id,
         )
         .first()
     )
 
     if previous_current:
-        previous_current.status = "SUPERSEDED"
+        previous_current.status = POLICY_STATUS_SUPERSEDED
 
-    policy.status = "CURRENT"
+    policy.status = POLICY_STATUS_CURRENT
     database.commit()
     database.refresh(policy)
 

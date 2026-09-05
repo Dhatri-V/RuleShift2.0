@@ -182,6 +182,7 @@ main {
   grid-column: span 6;
 }
 
+.admin-panel,
 .compare-panel,
 .question-panel {
   grid-column: 1 / -1;
@@ -409,6 +410,80 @@ form > button:hover:not(:disabled) {
   text-transform: uppercase;
 }
 
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-item {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 210px auto;
+  align-items: end;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e2e4df;
+  border-radius: 13px;
+  background: #fafaf7;
+}
+
+.review-policy {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  gap: 4px;
+}
+
+.review-policy strong {
+  color: #273633;
+  font-size: 0.88rem;
+}
+
+.review-policy span {
+  color: #83908c;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.review-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.review-actions button {
+  min-height: 46px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 11px;
+  background: #173f3b;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.review-actions button:hover:not(:disabled) {
+  background: #24564f;
+}
+
+.review-actions .secondary-button {
+  border: 1px solid #b7c5c0;
+  background: transparent;
+  color: #2b6f67;
+}
+
+.review-actions .secondary-button:hover:not(:disabled) {
+  background: #eaf2ed;
+}
+
+.review-empty {
+  min-height: 100px;
+}
+
+.admin-panel .message {
+  margin-top: 14px;
+}
+
 .empty-state {
   min-height: 178px;
   display: grid;
@@ -586,6 +661,14 @@ footer {
   .form-row.three-columns {
     grid-template-columns: 1fr;
   }
+
+  .review-item {
+    grid-template-columns: minmax(0, 1fr) 210px;
+  }
+
+  .review-actions {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 580px) {
@@ -621,6 +704,15 @@ footer {
 
   .form-row {
     grid-template-columns: 1fr;
+  }
+
+  .review-item {
+    grid-template-columns: 1fr;
+  }
+
+  .review-actions {
+    grid-column: auto;
+    flex-wrap: wrap;
   }
 
   .impact-result {
