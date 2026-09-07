@@ -20,6 +20,7 @@ from database.models import (
     POLICY_STATUS_VERIFIED,
     POLICY_STATUSES,
     Policy,
+    PolicyFamily,
 )
 from services.pdf_service import PdfValidationError, extract_pdf_pages
 
@@ -82,6 +83,21 @@ class AdminLogin(BaseModel):
     password: str
 
 
+def get_or_create_policy_family(database, name):
+    family = database.query(PolicyFamily).filter(PolicyFamily.name == name).first()
+    if family is not None:
+        return family
+    try:
+        with database.begin_nested():
+            family = PolicyFamily(name=name)
+            database.add(family)
+            database.flush()
+    except IntegrityError:
+        # Another transaction may have created this family in the meantime.
+        family = database.query(PolicyFamily).filter(PolicyFamily.name == name).one()
+    return family
+
+
 def get_database():
     database = SessionLocal()
     try:
@@ -132,7 +148,7 @@ def create_policy(
         )
 
     new_policy = Policy(
-        name=policy.name,
+        family=get_or_create_policy_family(database, policy.name),
         version=policy.version,
         attendance_requirement=policy.attendance_requirement,
         status=POLICY_STATUS_DRAFT,
@@ -268,7 +284,7 @@ async def upload_policy(
         raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
 
     new_policy = Policy(
-        name=policy_name,
+        family=get_or_create_policy_family(database, policy_name),
         version=version,
         attendance_requirement=rule.attendance_requirement,
         status=POLICY_STATUS_DRAFT,
@@ -321,6 +337,12 @@ def delete_draft_policy(
     except Exception as error:
         raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
 
+    # Migration preserves legacy thresholds as unverified Rule records.
+    # Remove those source-free records when deleting their draft owner.
+    for rule in policy.rules:
+        if rule.legacy_unverified and rule.source_clause_id is None:
+            database.delete(rule)
+    database.flush()
     database.delete(policy)
     database.commit()
 
@@ -651,6 +673,9 @@ def mark_policy_current(
 
     if previous_current:
         previous_current.status = POLICY_STATUS_SUPERSEDED
+        # Release the unique CURRENT slot before activating another version,
+        # regardless of the order of their primary keys. Both share one commit.
+        database.flush()
 
     policy.status = POLICY_STATUS_CURRENT
     database.commit()

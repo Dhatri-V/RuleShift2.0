@@ -4,7 +4,6 @@ Reads the database URL from the central config layer (core/config.py) so
 that Alembic, the app, and tests all resolve the same DATABASE_URL.
 """
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -49,10 +48,15 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # sqlite3 legacy transaction mode does not BEGIN for DDL. Explicitly
+        # start one so a failed backfill rolls back the entire schema change.
+        if connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN")
         context.configure(connection=connection, target_metadata=target_metadata)
-
         with context.begin_transaction():
             context.run_migrations()
+        if connection.dialect.name == "sqlite":
+            connection.commit()
 
 
 if context.is_offline_mode():
