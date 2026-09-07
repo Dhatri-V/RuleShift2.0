@@ -32,6 +32,7 @@ class PolicyFamily(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     versions = relationship("PolicyVersion", back_populates="family", passive_deletes="all")
+    audit_events = relationship("AuditEvent", back_populates="family", foreign_keys="AuditEvent.family_id", passive_deletes="all")
 
 
 class PolicyVersion(Base):
@@ -69,6 +70,14 @@ class PolicyVersion(Base):
     predecessor = relationship(
         "PolicyVersion", remote_side=[family_id, id],
         foreign_keys=[family_id, supersedes_version_id], viewonly=True,
+    )
+
+    validation_issues = relationship("ValidationIssue", back_populates="version", foreign_keys="ValidationIssue.version_id", passive_deletes="all")
+    index_generations = relationship("IndexGeneration", back_populates="version", passive_deletes="all")
+    audit_events = relationship(
+        "AuditEvent", back_populates="version", foreign_keys="AuditEvent.version_id",
+        primaryjoin="and_(AuditEvent.version_id == PolicyVersion.id, AuditEvent.family_id == PolicyVersion.family_id)",
+        passive_deletes="all",
     )
 
     @hybrid_property
@@ -114,6 +123,7 @@ class Clause(Base):
 class Rule(Base):
     __tablename__ = "rules"
     __table_args__ = (
+        Index("uq_rule_version_id", "version_id", "id", unique=True),
         ForeignKeyConstraint(
             ["version_id", "source_clause_id"], ["clauses.version_id", "clauses.id"],
             name="fk_rule_clause_same_version", ondelete="RESTRICT",
@@ -136,3 +146,14 @@ class Rule(Base):
         foreign_keys=[source_clause_id],
         primaryjoin="and_(Clause.id == Rule.source_clause_id, Clause.version_id == Rule.version_id)",
     )
+
+    validation_issues = relationship(
+        "ValidationIssue", back_populates="rule", foreign_keys="ValidationIssue.rule_id",
+        primaryjoin="and_(ValidationIssue.rule_id == Rule.id, ValidationIssue.version_id == Rule.version_id)",
+        passive_deletes="all",
+    )
+    review = relationship("RuleReview", back_populates="rule", uselist=False, passive_deletes="all")
+
+
+# Register supporting tables in the same metadata used by the app and Alembic.
+from database.supporting_models import AuditEvent, IndexGeneration, RuleReview, ValidationIssue  # noqa: E402,F401
