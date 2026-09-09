@@ -42,19 +42,27 @@ def create_policy_chunks(policy_name, version, pages):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=800,
         chunk_overlap=100,
+        add_start_index=True,
     )
 
     return text_splitter.split_documents(page_documents)
 
 
-def store_policy_pages(policy_name, version, pages):
-    chunks = create_policy_chunks(policy_name, version, pages)
+def store_policy_pages(policy_name, version, pages, *, chunks=None):
+    # Uploads supply persisted, ownership-enriched clauses. Legacy callers retain
+    # the existing standalone page-indexing helper. Retrieval is unchanged.
+    if chunks is None:
+        chunks = create_policy_chunks(policy_name, version, pages)
 
     if not chunks:
         return 0
 
     vector_store = get_vector_store()
-    chunk_ids = [str(uuid4()) for chunk in chunks]
+    chunk_ids = [
+        f"clause:{chunk.metadata['source_sha256']}:{chunk.metadata['version_id']}:{chunk.metadata['clause_id']}"
+        if "clause_id" in chunk.metadata else str(uuid4())
+        for chunk in chunks
+    ]
     vector_store.add_documents(documents=chunks, ids=chunk_ids)
 
     return len(chunks)

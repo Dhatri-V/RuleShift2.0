@@ -31,25 +31,34 @@ function App() {
       const data = await apiRequest("/policies");
       setPolicies(data);
       setPolicyListError("");
-      setApiOnline(true);
     } catch (error) {
       setPolicyListError(error.message);
-      setApiOnline(false);
     }
   }
 
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
     async function checkApi() {
       try {
-        await apiRequest("/");
-        setApiOnline(true);
+        const data = await apiRequest("/health", { signal: controller.signal });
+        if (active) setApiOnline(data.status === "ok");
       } catch {
-        setApiOnline(false);
+        if (active) setApiOnline(false);
       }
     }
 
     checkApi();
     loadPolicies();
+    const interval = window.setInterval(checkApi, 15000);
+    window.addEventListener("focus", checkApi);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkApi);
+    };
   }, []);
 
   function handleLoginStateChange(token) {

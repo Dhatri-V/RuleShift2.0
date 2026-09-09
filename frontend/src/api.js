@@ -1,4 +1,4 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8002";
+export const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export const ADMIN_TOKEN_KEY = "ruleshift_admin_token";
 

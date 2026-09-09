@@ -213,7 +213,7 @@ def test_page_metadata_survives_into_chunks(mock_extract, mock_store, client):
     from schemas.rule import Rule
 
     mock_extract.return_value = Rule(attendance_requirement=85)
-    mock_store.side_effect = lambda name, version, pages: len(
+    mock_store.side_effect = lambda name, version, pages, **kwargs: len(
         create_policy_chunks(name, version, pages)
     )
     pdf = make_pdf([VALID_PDF_TEXT, "", "Page three has text."])

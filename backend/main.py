@@ -22,6 +22,7 @@ from database.models import (
     Policy,
     PolicyFamily,
 )
+from services.source_service import persist_source
 from services.pdf_service import PdfValidationError, extract_pdf_pages
 
 
@@ -109,6 +110,12 @@ def get_database():
 @app.get("/")
 def home():
     return {"message": "RuleShift API is running"}
+
+
+@app.get("/health")
+def health():
+    """API liveness, independent of database and local AI availability."""
+    return {"status": "ok"}
 
 
 @app.post("/auth/login")
@@ -279,21 +286,29 @@ async def upload_policy(
         )
 
     try:
-        chunk_count = store_policy_pages(policy_name, version, pages)
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
-
-    new_policy = Policy(
-        family=get_or_create_policy_family(database, policy_name),
-        version=version,
-        attendance_requirement=rule.attendance_requirement,
-        status=POLICY_STATUS_DRAFT,
-    )
-    database.add(new_policy)
-    try:
+        # SQLite must have a physical transaction before the family SAVEPOINT;
+        # otherwise releasing that first savepoint commits the new family early.
+        connection = database.connection()
+        if connection.dialect.name == "sqlite" and not connection.connection.driver_connection.in_transaction:
+            connection.exec_driver_sql("BEGIN")
+        new_policy = Policy(
+            family=get_or_create_policy_family(database, policy_name),
+            version=version,
+            attendance_requirement=rule.attendance_requirement,
+            status=POLICY_STATUS_DRAFT,
+        )
+        database.add(new_policy)
+        database.flush()  # Stable ownership IDs before clauses or index writes.
+        chunks = persist_source(database, new_policy, pdf_bytes, pages)
+        try:
+            chunk_count = store_policy_pages(policy_name, version, pages, chunks=chunks)
+        except Exception as error:
+            database.rollback()
+            raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
         database.commit()
     except IntegrityError:
         database.rollback()
+        # Cross-store index compensation remains a separate checkpoint.
         raise HTTPException(
             status_code=409,
             detail=f"Policy '{policy_name}' version '{version}' already exists.",
@@ -343,6 +358,17 @@ def delete_draft_policy(
         if rule.legacy_unverified and rule.source_clause_id is None:
             database.delete(rule)
     database.flush()
+    # Uploaded drafts now own source clauses and PDF evidence. Preserve existing
+    # draft deletion while foreign keys still protect referenced clauses/rules.
+    for clause in policy.clauses:
+        database.delete(clause)
+    database.flush()
+    if policy.source_document is not None:
+        for page in policy.source_document.pages:
+            database.delete(page)
+        database.flush()
+        database.delete(policy.source_document)
+        database.flush()
     database.delete(policy)
     database.commit()
 

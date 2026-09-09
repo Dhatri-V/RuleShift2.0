@@ -65,6 +65,7 @@ class PolicyVersion(Base):
     supersedes_version_id = Column(Integer)
 
     family = relationship("PolicyFamily", back_populates="versions", foreign_keys=[family_id])
+    source_document = relationship("SourceDocument", back_populates="version", uselist=False, passive_deletes="all")
     clauses = relationship("Clause", back_populates="version", passive_deletes="all")
     rules = relationship("Rule", back_populates="version", foreign_keys="Rule.version_id", passive_deletes="all")
     predecessor = relationship(
@@ -112,6 +113,10 @@ class Clause(Base):
     source_text = Column(Text, nullable=False)
     clause_label = Column(String)
 
+    @property
+    def policy_id(self):
+        return self.version.family_id
+
     version = relationship("PolicyVersion", back_populates="clauses")
     rules = relationship(
         "Rule", back_populates="source_clause", foreign_keys="Rule.source_clause_id",
@@ -157,3 +162,5 @@ class Rule(Base):
 
 # Register supporting tables in the same metadata used by the app and Alembic.
 from database.supporting_models import AuditEvent, IndexGeneration, RuleReview, ValidationIssue  # noqa: E402,F401
+
+from database.source_models import SourceDocument, SourcePage  # noqa: E402,F401

@@ -60,6 +60,7 @@ def test_empty_database_upgrade_and_metadata_match(migration):
     assert set(inspect(engine).get_table_names()) == {
         'alembic_version', 'policy_families', 'policy_versions', 'clauses', 'rules',
         'validation_issues', 'rule_reviews', 'index_generations', 'audit_events',
+        'source_documents', 'source_pages',
     }
     with engine.connect() as connection:
         context = MigrationContext.configure(connection, opts={'compare_type': True, 'compare_server_default': True})
@@ -147,7 +148,7 @@ def test_downgrade_refuses_to_discard_new_source_data(migration):
         command.downgrade(config, '0001_initial')
     with engine.connect() as connection:
         assert connection.scalar(text('SELECT count(*) FROM clauses')) == 1
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0003_supporting'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0004_source'
 
 
 def test_migrated_schema_enforces_same_version_source_and_single_current(migration):

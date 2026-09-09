@@ -1,3 +1,5 @@
+> Historical verification baseline. Stable chunk ownership, Clause persistence and PDF source evidence are now implemented; see `docs/source_persistence.md` for current results. The SQL/vector rollback failure remains open.
+
 # Large mixed-content PDF ingestion verification
 
 ## Conclusion
