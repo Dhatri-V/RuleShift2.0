@@ -1,15 +1,15 @@
 import { useState } from "react";
 
+import { Navigate } from "react-router-dom";
+import ComparePage from "./ComparePage.jsx";
 import Message from "../components/Message.jsx";
 import {
   adminHeaders,
   apiRequest,
-  clearAdminToken,
-  storeAdminToken,
 } from "../api.js";
 
 
-function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies }) {
+function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListError = "" }) {
   const [policyName, setPolicyName] = useState("");
   const [policyVersion, setPolicyVersion] = useState("");
   const [policyFile, setPolicyFile] = useState(null);
@@ -21,42 +21,31 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
   const [reviewingPolicyId, setReviewingPolicyId] = useState(null);
   const [reviewMessage, setReviewMessage] = useState({ type: "", text: "" });
 
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminLoggingIn, setAdminLoggingIn] = useState(false);
-  const [adminMessage, setAdminMessage] = useState({ type: "", text: "" });
+  const draftPolicies = policies.filter((policy) => policy.status === "DRAFT" || policy.source_check?.status === "MISMATCH");
 
-  const draftPolicies = policies.filter((policy) => policy.status === "DRAFT");
-
-  async function handleAdminLogin(event) {
-    event.preventDefault();
-    setAdminLoggingIn(true);
-    setAdminMessage({ type: "", text: "" });
-
+  async function adminRequest(path, options) {
     try {
-      const data = await apiRequest("/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
-      });
-
-      storeAdminToken(data.access_token);
-      onLoginStateChange(data.access_token);
-      setAdminPassword("");
-      setAdminMessage({ type: "success", text: "Logged in as admin." });
+      return await apiRequest(path, options);
     } catch (error) {
-      setAdminMessage({ type: "error", text: error.message });
-    } finally {
-      setAdminLoggingIn(false);
+      if (error.status === 401) onLogout();
+      throw error;
     }
   }
 
-  function handleAdminLogout() {
-    clearAdminToken();
-    onLoginStateChange("");
-    setAdminEmail("");
-    setAdminPassword("");
-    setAdminMessage({ type: "", text: "" });
+  async function handleMarkCurrent(policy) {
+    setReviewingPolicyId(policy.id);
+    setReviewMessage({ type: "", text: "" });
+    try {
+      const data = await adminRequest(`/policies/${policy.id}/mark-current`, {
+        method: "POST", headers: adminHeaders(adminToken),
+      });
+      setReviewMessage({ type: "success", text: `${data.name} ${data.version} marked current.` });
+      await onLoadPolicies();
+    } catch (error) {
+      setReviewMessage({ type: "error", text: error.message });
+    } finally {
+      setReviewingPolicyId(null);
+    }
   }
 
   async function handleUpload(event) {
@@ -76,7 +65,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     setUploadMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest("/policies/upload", {
+      const data = await adminRequest("/policies/upload", {
         method: "POST",
         body: formData,
         headers: adminHeaders(adminToken),
@@ -102,7 +91,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     setReviewMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest(`/policies/${policy.id}/rule`, {
+      const data = await adminRequest(`/policies/${policy.id}/rule`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -129,7 +118,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     setReviewMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest(`/policies/${policy.id}/verify`, {
+      const data = await adminRequest(`/policies/${policy.id}/verify`, {
         method: "POST",
         headers: adminHeaders(adminToken),
       });
@@ -158,7 +147,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     setReviewMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest(`/policies/${policy.id}`, {
+      const data = await adminRequest(`/policies/${policy.id}`, {
         method: "DELETE",
         headers: adminHeaders(adminToken),
       });
@@ -174,13 +163,31 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
     }
   }
 
+  if (!adminToken) return <Navigate to="/admin/login" replace />;
+
   return (
-    <>
-      <section className="panel upload-panel">
+    <div className="admin-dashboard">
+      <header className="admin-heading">
+        <div>
+          <p className="eyebrow">Administration</p>
+          <h2>Admin dashboard</h2>
+          <p>Upload policies, review extracted rules, and manage versions.</p>
+        </div>
+        <button className="text-button" type="button" onClick={onLogout}>Log out</button>
+      </header>
+      <nav className="admin-sections" aria-label="Admin sections">
+        <a className="nav-link" href="#admin-upload">Upload Policy</a>
+        <a className="nav-link" href="#admin-review">Review / Verify Policy</a>
+        <a className="nav-link" href="#admin-versions">Manage Policy Versions</a>
+        <a className="nav-link" href="#admin-compare">Compare Policies</a>
+      </nav>
+      {policyListError && <div className="message message-error" role="alert">{policyListError}</div>}
+      <Message message={reviewMessage} />
+      <section id="admin-upload" className="panel upload-panel" aria-labelledby="upload-heading">
         <div className="panel-heading">
           <span className="step">01</span>
           <div>
-            <h3>Upload a policy</h3>
+            <h3 id="upload-heading">Upload a policy</h3>
             <p>Extract and index attendance rules from a PDF.</p>
           </div>
         </div>
@@ -224,59 +231,20 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
           <button type="submit" disabled={uploading || !adminToken}>
             {uploading ? "Uploading and analyzing…" : "Upload policy"}
           </button>
-          {!adminToken && (
-            <small className="admin-hint">Admin login required to upload policies.</small>
-          )}
           <Message message={uploadMessage} />
         </form>
       </section>
 
-      <section className="panel admin-panel">
+      <section id="admin-review" className="panel admin-panel" aria-labelledby="review-heading">
         <div className="panel-heading">
           <span className="step">AR</span>
           <div>
-            <h3>Admin review</h3>
-            <p>Correct extracted attendance rules before verification.</p>
+            <h3 id="review-heading">Review / Verify Policy</h3>
+            <p>Check the source evidence and save corrections before verification. Repairing a reviewed mismatch returns it to DRAFT.</p>
           </div>
-          {adminToken ? (
-            <button className="text-button" type="button" onClick={handleAdminLogout}>
-              Log out
-            </button>
-          ) : null}
         </div>
 
-        {!adminToken ? (
-          <form className="admin-login" onSubmit={handleAdminLogin}>
-            <div className="form-row">
-              <label>
-                Admin email
-                <input
-                  type="email"
-                  value={adminEmail}
-                  onChange={(event) => setAdminEmail(event.target.value)}
-                  placeholder="admin@example.edu"
-                  autoComplete="username"
-                  required
-                />
-              </label>
-              <label>
-                Admin password
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(event) => setAdminPassword(event.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  required
-                />
-              </label>
-            </div>
-            <button type="submit" disabled={adminLoggingIn}>
-              {adminLoggingIn ? "Signing in…" : "Admin login"}
-            </button>
-            <Message message={adminMessage} />
-          </form>
-        ) : draftPolicies.length === 0 ? (
+        {draftPolicies.length === 0 ? (
           <div className="empty-state review-empty">No draft policies awaiting review.</div>
         ) : (
           <div className="review-list">
@@ -300,7 +268,10 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
                 >
                   <div className="review-policy">
                     <strong>{policy.name}</strong>
-                    <span>Version {policy.version} · DRAFT</span>
+                    <span>Version {policy.version}</span>
+                    <span className={`admin-status status-${policy.status.toLowerCase()}`}>{policy.status}</span>
+                    <span>Stored attendance: {policy.attendance_requirement}%</span>
+                    {policy.source_check && <p className={policy.source_check.status === "MISMATCH" ? "message message-error" : "source-note"}>{policy.source_check.message}</p>}
                   </div>
                   <label>
                     Attendance requirement
@@ -334,7 +305,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
                     <button
                       className="secondary-button"
                       type="button"
-                      disabled={reviewBusy || invalidRule || hasUnsavedRule}
+                      disabled={reviewBusy || invalidRule || hasUnsavedRule || policy.source_check?.status === "MISMATCH"}
                       onClick={() => handleVerify(policy)}
                       title={hasUnsavedRule ? "Save the correction before verifying." : ""}
                     >
@@ -342,7 +313,7 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
                         ? "Verifying…"
                         : "Verify"}
                     </button>
-                    <button
+                    {policy.status === "DRAFT" && <button
                       className="danger-button"
                       type="button"
                       disabled={reviewBusy}
@@ -350,16 +321,47 @@ function AdminPage({ policies, adminToken, onLoginStateChange, onLoadPolicies })
                       title="Delete this draft policy and its indexed text."
                     >
                       {reviewingPolicyId === policy.id ? "Deleting…" : "Delete"}
-                    </button>
+                    </button>}
                   </div>
                 </form>
               );
             })}
           </div>
         )}
-        {adminToken ? <Message message={reviewMessage} /> : null}
       </section>
-    </>
+      <section id="admin-versions" className="panel" aria-labelledby="versions-heading">
+        <div className="panel-heading">
+          <div>
+            <h3 id="versions-heading">Manage Policy Versions</h3>
+            <p>Review version status and choose the current verified version.</p>
+          </div>
+          <button className="text-button" type="button" onClick={onLoadPolicies}>Refresh versions</button>
+        </div>
+        {policies.length === 0 ? <div className="empty-state">No policies saved yet.</div> : (
+          <div className="version-management-list">
+            {policies.map((policy) => (
+              <article className="policy-item" key={policy.id}>
+                <div>
+                  <strong>{policy.name}</strong>
+                  <span>Version {policy.version} · {policy.attendance_requirement}% attendance</span>
+                </div>
+                <div><span className={`admin-status status-${policy.status.toLowerCase()}`}>{policy.status}</span>
+                {policy.source_check && <p className={policy.source_check.status === "MISMATCH" ? "message message-error" : "source-note"}>{policy.source_check.message}</p>}</div>
+                <div className="review-actions">
+                  {(policy.status === "DRAFT" || policy.source_check?.status === "MISMATCH") && <a className="nav-link" href="#admin-review">Review draft</a>}
+                  {policy.status === "VERIFIED" && (!policy.source_check || ["MATCH", "UNAVAILABLE"].includes(policy.source_check.status)) && (
+                    <button type="button" disabled={reviewingPolicyId !== null} onClick={() => handleMarkCurrent(policy)}>
+                      Mark current
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      <div id="admin-compare"><ComparePage policies={policies} /></div>
+    </div>
   );
 }
 

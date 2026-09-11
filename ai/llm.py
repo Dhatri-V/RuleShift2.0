@@ -6,7 +6,7 @@ EMBEDDING_MODEL = "nomic-embed-text"
 
 
 def get_llm():
-    return ChatOllama(model=LLM_MODEL, temperature=0)
+    return ChatOllama(model=LLM_MODEL, temperature=0, num_ctx=8192)
 
 
 def get_embeddings():

@@ -23,6 +23,8 @@ from database.models import (
     PolicyFamily,
 )
 from services.source_service import persist_source
+from services.rule_source import source_check, require_source_match, record_verified_rule
+from database.models import AuditEvent
 from services.pdf_service import PdfValidationError, extract_pdf_pages
 
 
@@ -192,6 +194,7 @@ def get_policies(database: Session = Depends(get_database)):
             "version": policy.version,
             "attendance_requirement": policy.attendance_requirement,
             "status": policy.status,
+            "source_check": source_check(policy),
         }
         for policy in policies
     ]
@@ -300,6 +303,8 @@ async def upload_policy(
         database.add(new_policy)
         database.flush()  # Stable ownership IDs before clauses or index writes.
         chunks = persist_source(database, new_policy, pdf_bytes, pages)
+        if source_check(new_policy)["status"] == "MISMATCH":
+            require_source_match(new_policy)
         try:
             chunk_count = store_policy_pages(policy_name, version, pages, chunks=chunks)
         except Exception as error:
@@ -344,6 +349,9 @@ def delete_draft_policy(
                 f"Policy '{policy.name}' version '{policy.version}' is {policy.status}."
             ),
         )
+
+    if policy.audit_events:
+        raise HTTPException(status_code=409, detail="This draft has review history and must be retained for audit; it cannot be deleted.")
 
     # Remove the derived RAG index entries first so no orphaned chunks remain
     # if the SQLite delete fails; SQLite stays the authoritative record.
@@ -425,6 +433,9 @@ def calculate_student_impact(
                        "Only VERIFIED, CURRENT or SUPERSEDED versions can be compared.",
             )
 
+    require_source_match(old_policy)
+    require_source_match(new_policy)
+
     if old_policy.attendance_requirement is None or new_policy.attendance_requirement is None:
         raise HTTPException(
             status_code=409,
@@ -499,6 +510,9 @@ def compare_policy_versions(
                 detail=f"{label} policy version {policy.version} is still DRAFT. "
                        "Only VERIFIED, CURRENT or SUPERSEDED versions can be compared.",
             )
+
+    require_source_match(old_policy)
+    require_source_match(new_policy)
 
     if old_policy.attendance_requirement is None or new_policy.attendance_requirement is None:
         raise HTTPException(
@@ -622,12 +636,18 @@ def update_policy_rule(
     policy = database.query(Policy).filter(Policy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found.")
-    if policy.status != POLICY_STATUS_DRAFT:
-        raise HTTPException(
-            status_code=409,
-            detail="Only DRAFT policies can have their rule edited.",
-        )
-
+    check = source_check(policy)
+    repair = policy.status != POLICY_STATUS_DRAFT and check['status'] == 'MISMATCH'
+    if policy.status != POLICY_STATUS_DRAFT and not repair:
+        raise HTTPException(status_code=409, detail="Only DRAFT policies can have their rule edited.")
+    require_source_match(policy, payload.attendance_requirement)
+    if repair:
+        database.add(AuditEvent(family_id=policy.family_id, version_id=policy.id,
+            actor_type='ADMIN', actor_id=admin['sub'], action='SOURCE_MISMATCH_REOPENED',
+            before_state={'attendance_requirement': policy.attendance_requirement, 'status': policy.status},
+            after_state={'attendance_requirement': payload.attendance_requirement, 'status': POLICY_STATUS_DRAFT},
+            reason=check['message']))
+        policy.status = POLICY_STATUS_DRAFT
     policy.attendance_requirement = payload.attendance_requirement
     database.commit()
     database.refresh(policy)
@@ -656,6 +676,7 @@ def verify_policy(
             detail="Only DRAFT policies can be verified.",
         )
 
+    record_verified_rule(database, policy, admin)
     policy.status = POLICY_STATUS_VERIFIED
     database.commit()
     database.refresh(policy)
@@ -683,6 +704,8 @@ def mark_policy_current(
             status_code=409,
             detail="Only VERIFIED policies can be marked CURRENT.",
         )
+
+    require_source_match(policy)
 
     # Find whichever other version of this same policy is currently CURRENT,
     # regardless of its version string, and supersede it. We never compare

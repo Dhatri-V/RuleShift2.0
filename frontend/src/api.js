@@ -8,7 +8,9 @@ export async function apiRequest(path, options = {}) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.detail || "Something went wrong.");
+    const error = new Error(data.detail || "Something went wrong.");
+    error.status = response.status;
+    throw error;
   }
 
   return data;

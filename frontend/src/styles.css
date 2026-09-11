@@ -1048,3 +1048,46 @@ footer {
     gap: 6px;
   }
 }
+
+/* Focused admin routing/layout; student panels keep their existing styling. */
+.admin-login-page { max-width: 480px; margin: 0 auto; }
+.admin-login-page h2, .admin-heading h2 { margin: 0 0 10px; color: #173f3b; }
+.student-return { display: inline-block; margin-top: 24px; color: #2b6f67; }
+.admin-dashboard { display: grid; gap: 24px; }
+.admin-heading { display: flex; align-items: flex-start; gap: 18px; }
+.admin-heading p:last-child { color: #65706d; margin: 0; }
+.admin-heading .text-button { font-size: .9rem; padding: 10px; }
+.admin-sections { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-dashboard section, #admin-compare { scroll-margin-top: 20px; }
+.version-management-list { display: grid; gap: 10px; }
+@media (max-width: 580px) {
+  .version-management-list .policy-item { flex-wrap: wrap; }
+  .admin-heading { flex-wrap: wrap; }
+}
+
+/* Admin owns its layout: student panel spans must not create implicit columns. */
+.admin-dashboard { grid-template-columns: minmax(0, 1fr); }
+.admin-dashboard > * { grid-column: 1 / -1; min-width: 0; }
+.admin-dashboard .panel { width: 100%; box-sizing: border-box; padding: 32px; }
+.admin-dashboard .admin-heading { justify-content: space-between; }
+.admin-dashboard .admin-sections { padding: 12px; background: #e9eeE7; border-radius: 14px; gap: 12px; }
+.admin-dashboard .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.admin-dashboard .review-item { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px); gap: 20px; padding: 24px; }
+.admin-dashboard .review-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; }
+.admin-dashboard .policy-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr); gap: 20px; padding: 24px; }
+.admin-dashboard .review-policy, .admin-dashboard .policy-item > div { min-width: 0; overflow-wrap: anywhere; }
+.admin-dashboard select { width: 100%; min-width: 0; text-overflow: clip; }
+.admin-status { display: inline-block; padding: 5px 10px; border-radius: 6px; font-size: .75rem; font-weight: 700; letter-spacing: .04em; }
+.status-draft { background: #f3ead6; color: #6a4b13; }
+.status-verified { background: #e2ede4; color: #285341; }
+.status-current { background: #173f3b; color: #fff; }
+.status-superseded { background: #e8e9e6; color: #505a54; }
+.source-note { font-size: .85rem; color: #52635c; line-height: 1.5; }
+@media (max-width: 900px) {
+ .admin-dashboard .form-row, .admin-dashboard .review-item, .admin-dashboard .policy-item { grid-template-columns: minmax(0, 1fr); }
+ .admin-dashboard .panel { padding: 20px; }
+ .admin-dashboard .panel-heading { flex-wrap: wrap; }
+}
+
+.admin-dashboard .admin-status { width: fit-content; align-self: flex-start; }
+.admin-dashboard .selected-version-detail { margin: 6px 0 0; overflow-wrap: anywhere; color: #52635c; font-size: .85rem; }

@@ -5,7 +5,7 @@ function HomePage({ policies }) {
         <p className="section-number">Dashboard</p>
         <h2>Understand how policy changes affect students.</h2>
         <p>
-          Upload policy versions, compare attendance rules, and ask questions
+          Browse policies, compare attendance rules, check student impact, and ask questions
           grounded in the original documents.
         </p>
       </div>

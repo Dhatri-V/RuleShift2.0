@@ -1,0 +1,89 @@
+{
+  "document": "academic_policy_manual_2027.pdf",
+  "institution": "Alderbridge University (fictional)",
+  "edition": "2027.1",
+  "effective_date": "2027-08-01",
+  "page_count": 72,
+  "page_number_convention": "1-based physical PDF page; identical to printed page number",
+  "facts": [
+    {
+      "fact": "attendance",
+      "expected_value": "85%",
+      "section": "3.1",
+      "page_number": 11,
+      "expected_evidence_phrase": "The minimum attendance requirement is 85% in each course.",
+      "all_evidence_pages": [
+        11
+      ]
+    },
+    {
+      "fact": "internal_assessment",
+      "expected_value": "24/60",
+      "section": "5.2",
+      "page_number": 18,
+      "expected_evidence_phrase": "The internal assessment minimum is 24 marks out of 60.",
+      "all_evidence_pages": [
+        18
+      ]
+    },
+    {
+      "fact": "medical_condonation",
+      "expected_value": {
+        "minimum_inclusive": 80,
+        "maximum_exclusive": 85,
+        "unit": "percent",
+        "required_approver": "Academic Board",
+        "required_recommendation": "Dean"
+      },
+      "section": "8.1",
+      "page_number": 26,
+      "expected_evidence_phrase": "Medical condonation is available only where attendance is at least 80% and below 85%, and requires Academic Board approval.",
+      "all_evidence_pages": [
+        26
+      ]
+    },
+    {
+      "fact": "late_examination_entry",
+      "expected_value": {
+        "maximum_minutes_after_start": 15
+      },
+      "section": "7.1",
+      "page_number": 23,
+      "expected_evidence_phrase": "Late examination entry is permitted only up to 15 minutes after the examination starts.",
+      "all_evidence_pages": [
+        23
+      ]
+    },
+    {
+      "fact": "library_borrowing",
+      "expected_value": {
+        "books": 6,
+        "loan_days": 28,
+        "maximum_renewals": 1
+      },
+      "section": "13.1",
+      "page_number": 41,
+      "expected_evidence_phrase": "Undergraduate students may borrow 6 books for 28 days, with a maximum of 1 renewal.",
+      "all_evidence_pages": [
+        41
+      ]
+    },
+    {
+      "fact": "hostel_visitors",
+      "expected_value": "19:00",
+      "section": "14.2",
+      "page_number": 45,
+      "expected_evidence_phrase": "Hostel visitors must depart by 19:00.",
+      "all_evidence_pages": [
+        45
+      ]
+    }
+  ],
+  "verification": {
+    "nonempty_pages": 72,
+    "authoritative_facts_verified": 6,
+    "parser": "RuleShift services.pdf_service.extract_pdf_pages",
+    "pdf_sha256": "b222bc76a9ebeb12f9d3a76e4dd612ece53a61a90ba0c6ba6d47dfb6516b72f7"
+  },
+  "applicability": "Academic rules apply to incoming 2027 cohort; revised library loans and residence visits apply from effective date. See section 20.3, page 64."
+}

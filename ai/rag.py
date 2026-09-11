@@ -1,4 +1,5 @@
 from uuid import uuid4
+from core.attendance_source import attendance_provisions, ordinary_attendance_question
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -155,7 +156,17 @@ Question:
 
     response = get_llm().invoke(prompt)
 
+    answer = response.content
+    # Recover only an explicit ordinary-rule answer from selected-version evidence.
+    # Never generalise this to eligibility, exceptions, or multiple thresholds.
+    if INSUFFICIENT_EVIDENCE_ANSWER.lower() in answer.lower() and ordinary_attendance_question(question):
+        facts = [(fact, item) for item in evidence for fact in attendance_provisions(item['text'])]
+        if len({fact['value'] for fact, _ in facts}) == 1:
+            fact, item = facts[0]
+            answer = f"{fact['quote']} (Page {item['page_number']}.) Refer to the cited passage for scope and exceptions."
+            evidence = [item]
+
     return {
-        "answer": response.content,
+        "answer": answer,
         "evidence": evidence,
     }

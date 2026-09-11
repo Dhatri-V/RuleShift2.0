@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 
-import { apiRequest, getStoredAdminToken } from "./api.js";
+import { apiRequest, clearAdminToken, getStoredAdminToken } from "./api.js";
+import AdminLoginPage from "./pages/AdminLoginPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 import AskPage from "./pages/AskPage.jsx";
 import ComparePage from "./pages/ComparePage.jsx";
@@ -16,7 +17,6 @@ const NAV_ITEMS = [
   { path: "/compare", label: "Compare" },
   { path: "/impact", label: "Student Impact" },
   { path: "/ask", label: "Ask" },
-  { path: "/admin", label: "Admin" },
 ];
 
 
@@ -65,6 +65,11 @@ function App() {
     setAdminToken(token);
   }
 
+  function handleLogout() {
+    clearAdminToken();
+    setAdminToken("");
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -90,6 +95,12 @@ function App() {
             {item.label}
           </NavLink>
         ))}
+        <NavLink
+          to={adminToken ? "/admin/dashboard" : "/admin/login"}
+          className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+        >
+          Admin
+        </NavLink>
       </nav>
 
       <main>
@@ -109,16 +120,26 @@ function App() {
           <Route path="/impact" element={<ImpactPage policies={policies} />} />
           <Route path="/ask" element={<AskPage policies={policies} />} />
           <Route
-            path="/admin"
-            element={
+            path="/admin/login"
+            element={adminToken
+              ? <Navigate to="/admin/dashboard" replace />
+              : <AdminLoginPage onLoginStateChange={handleLoginStateChange} />}
+          />
+          <Route
+            path="/admin/dashboard"
+            element={adminToken ? (
               <AdminPage
                 policies={policies}
+                policyListError={policyListError}
                 adminToken={adminToken}
-                onLoginStateChange={handleLoginStateChange}
+                onLogout={handleLogout}
                 onLoadPolicies={loadPolicies}
               />
-            }
+            ) : <Navigate to="/admin/login" replace />}
           />
+          <Route path="/admin/*" element={
+            <Navigate to={adminToken ? "/admin/dashboard" : "/admin/login"} replace />
+          } />
         </Routes>
       </main>
 

@@ -1,0 +1,89 @@
+{
+  "document": "academic_policy_manual_2026.pdf",
+  "institution": "Alderbridge University (fictional)",
+  "edition": "2026.1",
+  "effective_date": "2026-08-01",
+  "page_count": 72,
+  "page_number_convention": "1-based physical PDF page; identical to printed page number",
+  "facts": [
+    {
+      "fact": "attendance",
+      "expected_value": "80%",
+      "section": "3.1",
+      "page_number": 11,
+      "expected_evidence_phrase": "The minimum attendance requirement is 80% in each course.",
+      "all_evidence_pages": [
+        11
+      ]
+    },
+    {
+      "fact": "internal_assessment",
+      "expected_value": "20/50",
+      "section": "5.2",
+      "page_number": 18,
+      "expected_evidence_phrase": "The internal assessment minimum is 20 marks out of 50.",
+      "all_evidence_pages": [
+        18
+      ]
+    },
+    {
+      "fact": "medical_condonation",
+      "expected_value": {
+        "minimum_inclusive": 75,
+        "maximum_exclusive": 80,
+        "unit": "percent",
+        "required_approver": "Dean"
+      },
+      "section": "8.1",
+      "page_number": 26,
+      "expected_evidence_phrase": "Medical condonation is available only where attendance is at least 75% and below 80%, and requires Dean approval.",
+      "all_evidence_pages": [
+        26
+      ]
+    },
+    {
+      "fact": "late_examination_entry",
+      "expected_value": {
+        "maximum_minutes_after_start": 20
+      },
+      "section": "7.1",
+      "page_number": 23,
+      "expected_evidence_phrase": "Late examination entry is permitted only up to 20 minutes after the examination starts.",
+      "all_evidence_pages": [
+        23
+      ]
+    },
+    {
+      "fact": "library_borrowing",
+      "expected_value": {
+        "books": 5,
+        "loan_days": 21,
+        "maximum_renewals": 2
+      },
+      "section": "13.1",
+      "page_number": 41,
+      "expected_evidence_phrase": "Undergraduate students may borrow 5 books for 21 days, with a maximum of 2 renewals.",
+      "all_evidence_pages": [
+        41
+      ]
+    },
+    {
+      "fact": "hostel_visitors",
+      "expected_value": "19:30",
+      "section": "14.2",
+      "page_number": 45,
+      "expected_evidence_phrase": "Hostel visitors must depart by 19:30.",
+      "all_evidence_pages": [
+        45
+      ]
+    }
+  ],
+  "verification": {
+    "page_count_in_range": true,
+    "all_pages_have_extractable_text": true,
+    "nonempty_pages": 72,
+    "authoritative_facts_verified": 6,
+    "parser": "RuleShift services.pdf_service.extract_pdf_pages",
+    "pdf_sha256": "b32541c95074ddb3ab1381700609e7123a62ff67ec00e5aa5140176eefaa14c8"
+  }
+}

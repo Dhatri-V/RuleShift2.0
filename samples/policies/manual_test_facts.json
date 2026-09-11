@@ -1,0 +1,143 @@
+{
+  "academic_policy_50_pages.pdf": {
+    "pages": 50,
+    "suggested_policy_name": "Academic Policy Manual Test",
+    "suggested_version": "2025-50",
+    "facts": {
+      "Attendance": {
+        "page": 1,
+        "fact": "The ordinary minimum attendance is 75 percent in each course."
+      },
+      "Examinations": {
+        "page": 6,
+        "fact": "Examination entry closes 30 minutes after the published start time."
+      },
+      "Internal Assessment": {
+        "page": 11,
+        "fact": "The internal assessment minimum is 16 marks out of 40."
+      },
+      "Condonation": {
+        "page": 16,
+        "fact": "Medical condonation may be considered from 70 percent to below 75 percent attendance, subject to recorded department approval."
+      },
+      "Fees": {
+        "page": 21,
+        "fact": "Complete refund applications are processed within 15 working days."
+      },
+      "Hostel": {
+        "page": 26,
+        "fact": "Ordinary hostel visitors must leave by 20:00; overnight stays require separate written approval."
+      },
+      "Library": {
+        "page": 31,
+        "fact": "Undergraduate students may borrow 4 books for 14 calendar days, with at most 1 renewals when no reservation is pending."
+      },
+      "Discipline": {
+        "page": 36,
+        "fact": "A disciplinary appeal must be filed within 5 working days after the written decision is received."
+      },
+      "IT and Laboratory": {
+        "page": 41,
+        "fact": "A temporary laboratory account expires after 14 calendar days unless the project supervisor renews access in writing."
+      },
+      "Miscellaneous Academic Policies": {
+        "page": 46,
+        "fact": "A complete credit-transfer application should receive a decision within 10 working days after equivalence review begins."
+      }
+    }
+  },
+  "academic_policy_75_pages.pdf": {
+    "pages": 75,
+    "suggested_policy_name": "Academic Policy Manual Test",
+    "suggested_version": "2026-75",
+    "facts": {
+      "Attendance": {
+        "page": 1,
+        "fact": "The ordinary minimum attendance is 80 percent in each course."
+      },
+      "Examinations": {
+        "page": 9,
+        "fact": "Examination entry closes 20 minutes after the published start time."
+      },
+      "Internal Assessment": {
+        "page": 16,
+        "fact": "The internal assessment minimum is 20 marks out of 50."
+      },
+      "Condonation": {
+        "page": 24,
+        "fact": "Medical condonation may be considered from 75 percent to below 80 percent attendance, subject to recorded Dean approval."
+      },
+      "Fees": {
+        "page": 31,
+        "fact": "Complete refund applications are processed within 12 working days."
+      },
+      "Hostel": {
+        "page": 39,
+        "fact": "Ordinary hostel visitors must leave by 19:30; overnight stays require separate written approval."
+      },
+      "Library": {
+        "page": 46,
+        "fact": "Undergraduate students may borrow 5 books for 21 calendar days, with at most 2 renewals when no reservation is pending."
+      },
+      "Discipline": {
+        "page": 54,
+        "fact": "A disciplinary appeal must be filed within 7 working days after the written decision is received."
+      },
+      "IT and Laboratory": {
+        "page": 61,
+        "fact": "A temporary laboratory account expires after 21 calendar days unless the project supervisor renews access in writing."
+      },
+      "Miscellaneous Academic Policies": {
+        "page": 69,
+        "fact": "A complete credit-transfer application should receive a decision within 8 working days after equivalence review begins."
+      }
+    }
+  },
+  "academic_policy_100_pages.pdf": {
+    "pages": 100,
+    "suggested_policy_name": "Academic Policy Manual Test",
+    "suggested_version": "2027-100",
+    "facts": {
+      "Attendance": {
+        "page": 1,
+        "fact": "The ordinary minimum attendance is 85 percent in each course."
+      },
+      "Examinations": {
+        "page": 11,
+        "fact": "Examination entry closes 15 minutes after the published start time."
+      },
+      "Internal Assessment": {
+        "page": 21,
+        "fact": "The internal assessment minimum is 24 marks out of 60."
+      },
+      "Condonation": {
+        "page": 31,
+        "fact": "Medical condonation may be considered from 80 percent to below 85 percent attendance, subject to recorded Academic Board approval."
+      },
+      "Fees": {
+        "page": 41,
+        "fact": "Complete refund applications are processed within 10 working days."
+      },
+      "Hostel": {
+        "page": 51,
+        "fact": "Ordinary hostel visitors must leave by 19:00; overnight stays require separate written approval."
+      },
+      "Library": {
+        "page": 61,
+        "fact": "Undergraduate students may borrow 6 books for 28 calendar days, with at most 3 renewals when no reservation is pending."
+      },
+      "Discipline": {
+        "page": 71,
+        "fact": "A disciplinary appeal must be filed within 10 working days after the written decision is received."
+      },
+      "IT and Laboratory": {
+        "page": 81,
+        "fact": "A temporary laboratory account expires after 28 calendar days unless the project supervisor renews access in writing."
+      },
+      "Miscellaneous Academic Policies": {
+        "page": 91,
+        "fact": "A complete credit-transfer application should receive a decision within 6 working days after equivalence review begins."
+      }
+    }
+  }
+}

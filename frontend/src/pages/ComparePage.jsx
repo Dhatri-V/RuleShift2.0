@@ -80,6 +80,7 @@ function ComparePage({ policies }) {
                 </option>
               ))}
             </select>
+            {oldPolicy && <span className="selected-version-detail">{oldPolicy.name} · Version {oldPolicy.version} · {oldPolicy.status}</span>}
           </label>
           <label>
             New policy version
@@ -101,6 +102,7 @@ function ComparePage({ policies }) {
                 </option>
               ))}
             </select>
+            {newPolicyId && <span className="selected-version-detail">{newPolicyOptions.find((policy) => String(policy.id) === String(newPolicyId))?.name} · Version {newPolicyOptions.find((policy) => String(policy.id) === String(newPolicyId))?.version}</span>}
           </label>
         </div>
 
