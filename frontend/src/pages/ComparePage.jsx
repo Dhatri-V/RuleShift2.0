@@ -9,6 +9,21 @@ const DIRECTION_STYLES = {
   UNCHANGED: "compare-direction-unchanged",
 };
 
+const VERSION_COLLATOR = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+
+function belongsToSameFamily(left, right) {
+  if (left?.family_id != null && right?.family_id != null) {
+    return String(left.family_id) === String(right.family_id);
+  }
+  return left?.name === right?.name;
+}
+
+
+function isNewerVersion(candidate, baseline) {
+  return VERSION_COLLATOR.compare(String(candidate.version), String(baseline.version)) > 0;
+}
+
 
 function ComparePage({ policies }) {
   const [oldPolicyId, setOldPolicyId] = useState("");
@@ -23,8 +38,9 @@ function ComparePage({ policies }) {
   );
   const newPolicyOptions = comparablePolicies.filter(
     (policy) =>
-      policy.name === oldPolicy?.name && String(policy.id) !== String(oldPolicyId),
-  );
+      belongsToSameFamily(policy, oldPolicy) && isNewerVersion(policy, oldPolicy),
+  ).sort((left, right) => VERSION_COLLATOR.compare(String(left.version), String(right.version)));
+  const noNewerVersion = Boolean(oldPolicy) && newPolicyOptions.length === 0;
 
   async function handleCompare(event) {
     event.preventDefault();
@@ -85,16 +101,19 @@ function ComparePage({ policies }) {
           <label>
             New policy version
             <select
+              aria-label="New policy version"
               value={newPolicyId}
               onChange={(event) => {
                 setNewPolicyId(event.target.value);
                 setVersionComparison(null);
               }}
-              disabled={!oldPolicy}
+              disabled={!oldPolicy || noNewerVersion}
               required
             >
               <option value="">
-                {oldPolicy ? "Select a newer version…" : "Select old version first…"}
+                {noNewerVersion
+                  ? "No newer verified version available"
+                  : oldPolicy ? "Select a newer version…" : "Select old version first…"}
               </option>
               {newPolicyOptions.map((policy) => (
                 <option key={policy.id} value={policy.id}>
@@ -102,6 +121,11 @@ function ComparePage({ policies }) {
                 </option>
               ))}
             </select>
+            {noNewerVersion && (
+              <span className="selected-version-detail" role="status">
+                This is the latest version in the selected policy family.
+              </span>
+            )}
             {newPolicyId && <span className="selected-version-detail">{newPolicyOptions.find((policy) => String(policy.id) === String(newPolicyId))?.name} · Version {newPolicyOptions.find((policy) => String(policy.id) === String(newPolicyId))?.version}</span>}
           </label>
         </div>
