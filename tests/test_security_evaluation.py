@@ -34,6 +34,7 @@ from ai.rag import (
 )
 from backend.main import app, get_database
 from core.auth import require_admin
+from conftest import drop_all_test_schema, upload_source_policy
 from core.impact import compare_attendance_requirements, compare_rules
 from database.db import Base
 
@@ -105,7 +106,7 @@ def client():
             yield test_client
     finally:
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=test_engine)
+        drop_all_test_schema(test_engine)
         test_engine.dispose()
 
 
@@ -142,17 +143,9 @@ def create_verified(
     attendance_requirement=80,
     name=EVAL_POLICY_NAME,
 ):
-    response = client.post(
-        "/policies",
-        json={
-            "name": name,
-            "version": version,
-            "attendance_requirement": attendance_requirement,
-        },
+    policy = upload_source_policy(
+        client, name=name, version=version, attendance=attendance_requirement,
     )
-    assert response.status_code == 200
-    policy = response.json()
-
     response = client.post(f"/policies/{policy['id']}/verify")
     assert response.status_code == 200
     return response.json()
@@ -263,7 +256,7 @@ def test_rag_eval_every_evidence_item_has_required_fields(
 
     assert result["evidence"]
     for item in result["evidence"]:
-        assert set(item) == {"policy_name", "version", "page_number", "text"}
+        assert {"policy_id", "version_id", "policy_name", "version", "clause_id", "page_number", "source_sha256", "start_offset", "end_offset", "text"} <= set(item)
         assert item["policy_name"] == EVAL_POLICY_NAME
         assert item["version"] == version
         assert isinstance(item["page_number"], int)
@@ -374,7 +367,7 @@ def test_lifecycle_new_current_supersedes_previous_current(client):
 
     assert response.status_code == 200
     assert response.json()["superseded_id"] == previous["id"]
-    statuses = {p["id"]: p["status"] for p in client.get("/policies").json()}
+    statuses = {p["id"]: p["status"] for p in client.get("/admin/policies").json()}
     assert statuses[latest["id"]] == "CURRENT"
     assert statuses[previous["id"]] == "SUPERSEDED"
 

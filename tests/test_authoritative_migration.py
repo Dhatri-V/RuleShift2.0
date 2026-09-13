@@ -60,7 +60,7 @@ def test_empty_database_upgrade_and_metadata_match(migration):
     assert set(inspect(engine).get_table_names()) == {
         'alembic_version', 'policy_families', 'policy_versions', 'clauses', 'rules',
         'validation_issues', 'rule_reviews', 'index_generations', 'audit_events',
-        'source_documents', 'source_pages',
+        'source_documents', 'source_pages', 'impact_runs',
     }
     with engine.connect() as connection:
         context = MigrationContext.configure(connection, opts={'compare_type': True, 'compare_server_default': True})
@@ -148,7 +148,7 @@ def test_downgrade_refuses_to_discard_new_source_data(migration):
         command.downgrade(config, '0001_initial')
     with engine.connect() as connection:
         assert connection.scalar(text('SELECT count(*) FROM clauses')) == 1
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0004_source'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0005_impact'
 
 
 def test_migrated_schema_enforces_same_version_source_and_single_current(migration):
@@ -172,7 +172,7 @@ def test_existing_api_creates_families_reuses_names_and_preserves_version_ids(mi
     try:
         with api_client(engine) as client:
             assert client.get('/openapi.json').status_code == 200
-            existing = client.get('/policies').json()
+            existing = client.get('/admin/policies').json()
             assert {p['id'] for p in existing} == {row['id'] for row in LEGACY_ROWS}
             payload = {'name': 'Attendance', 'version': 'new', 'attendance_requirement': 80}
             created = client.post('/policies', json=payload)
@@ -185,21 +185,20 @@ def test_existing_api_creates_families_reuses_names_and_preserves_version_ids(mi
         app.dependency_overrides.clear()
 
 
-def test_existing_api_can_supersede_higher_id_current_version(migration):
+def test_migrated_source_free_version_cannot_become_current(migration):
     config, engine = migration
     seed_legacy(config, engine)
     command.upgrade(config, 'head')
-    # Exercise compatibility with valid pre-existing reviewed data. Trust gates
-    # are deliberately not implemented in the core-model checkpoint.
+    # Legacy status alone is not proof of source lineage.
     with engine.begin() as connection:
         connection.execute(text("UPDATE policy_versions SET status='VERIFIED' WHERE id=4"))
     try:
         with api_client(engine) as client:
             result = client.post('/policies/4/mark-current')
-            assert result.status_code == 200
-            assert result.json()['superseded_id'] == 9
-            current = [p['id'] for p in client.get('/policies').json() if p['status'] == 'CURRENT']
-            assert current == [4]
+            assert result.status_code == 409
+            assert 'authoritative PDF' in result.json()['detail']
+            current = [p['id'] for p in client.get('/admin/policies').json() if p['status'] == 'CURRENT']
+            assert current == [9]
     finally:
         app.dependency_overrides.clear()
 

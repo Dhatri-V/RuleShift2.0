@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.main import app, get_database
 from core.auth import require_admin
+from conftest import drop_all_test_schema, upload_source_policy
 from database.db import Base
 
 
@@ -61,7 +62,7 @@ def client():
             yield test_client
     finally:
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=test_engine)
+        drop_all_test_schema(test_engine)
         test_engine.dispose()
 
 
@@ -90,11 +91,8 @@ def create_verified(
     attendance_requirement=80,
     name="Academic Attendance Policy",
 ):
-    policy = create_draft(
-        client,
-        version=version,
-        attendance_requirement=attendance_requirement,
-        name=name,
+    policy = upload_source_policy(
+        client, name=name, version=version, attendance=attendance_requirement,
     )
     response = client.post(f"/policies/{policy['id']}/verify")
     assert response.status_code == 200
@@ -102,17 +100,33 @@ def create_verified(
     return response.json()
 
 
-def test_draft_policy_can_be_verified(client):
+def test_policy_list_exposes_stable_family_ownership(client):
+    first = create_draft(client, version="2025", name="Attendance Policy")
+    second = create_draft(client, version="2026", name="Attendance Policy")
+    other = create_draft(client, version="2027", name="Other Policy")
+
+    rows = {row["id"]: row for row in client.get("/admin/policies").json()}
+
+    assert rows[first["id"]]["family_id"] == rows[second["id"]]["family_id"]
+    assert rows[first["id"]]["family_id"] != rows[other["id"]]["family_id"]
+
+
+def test_source_free_draft_cannot_be_verified(client):
     policy = create_draft(client)
-
     response = client.post(f"/policies/{policy['id']}/verify")
+    assert response.status_code == 409
+    assert "authoritative PDF" in response.json()["detail"]
 
+
+def test_source_backed_draft_can_be_verified(client):
+    policy = upload_source_policy(client, attendance=80)
+    response = client.post(f"/policies/{policy['id']}/verify")
     assert response.status_code == 200
     assert response.json()["status"] == "VERIFIED"
 
 
 def test_policy_cannot_be_verified_twice(client):
-    policy = create_draft(client)
+    policy = upload_source_policy(client, attendance=80)
     first_response = client.post(f"/policies/{policy['id']}/verify")
 
     second_response = client.post(f"/policies/{policy['id']}/verify")
@@ -129,11 +143,11 @@ def test_draft_policy_cannot_be_marked_current(client):
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Only VERIFIED policies can be marked CURRENT."
-    assert client.get("/policies").json()[0]["status"] == "DRAFT"
+    assert client.get("/admin/policies").json()[0]["status"] == "DRAFT"
 
 
 def test_draft_rule_can_be_edited(client):
-    policy = create_draft(client)
+    policy = upload_source_policy(client, attendance=85.5)
 
     response = client.patch(
         f"/policies/{policy['id']}/rule",
@@ -146,8 +160,7 @@ def test_draft_rule_can_be_edited(client):
 
 
 def test_rule_cannot_be_edited_after_verification(client):
-    policy = create_draft(client)
-    client.post(f"/policies/{policy['id']}/verify")
+    policy = create_verified(client)
 
     response = client.patch(
         f"/policies/{policy['id']}/rule",
@@ -172,7 +185,8 @@ def test_rule_attendance_requirement_must_be_between_zero_and_one_hundred(
     attendance_requirement,
     expected_status,
 ):
-    policy = create_draft(client)
+    source_value = attendance_requirement if 0 <= attendance_requirement <= 100 else 80
+    policy = upload_source_policy(client, attendance=source_value)
 
     response = client.patch(
         f"/policies/{policy['id']}/rule",
@@ -183,11 +197,9 @@ def test_rule_attendance_requirement_must_be_between_zero_and_one_hundred(
 
 
 def test_marking_verified_policy_current_supersedes_previous_current(client):
-    previous_policy = create_draft(client, version="2025")
-    client.post(f"/policies/{previous_policy['id']}/verify")
+    previous_policy = create_verified(client, version="2025")
     client.post(f"/policies/{previous_policy['id']}/mark-current")
-    new_policy = create_draft(client, version="2026")
-    client.post(f"/policies/{new_policy['id']}/verify")
+    new_policy = create_verified(client, version="2026")
 
     response = client.post(f"/policies/{new_policy['id']}/mark-current")
 
@@ -195,7 +207,7 @@ def test_marking_verified_policy_current_supersedes_previous_current(client):
     assert response.json()["status"] == "CURRENT"
     assert response.json()["superseded_id"] == previous_policy["id"]
     policies_by_id = {
-        policy["id"]: policy for policy in client.get("/policies").json()
+        policy["id"]: policy for policy in client.get("/admin/policies").json()
     }
     assert policies_by_id[previous_policy["id"]]["status"] == "SUPERSEDED"
 

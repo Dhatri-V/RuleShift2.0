@@ -1,0 +1,56 @@
+{
+  "document": "academic_policy_manual_2025.pdf",
+  "institution": "Alderbridge University (fictional)",
+  "edition": "2025.1",
+  "effective_date": "1 August 2025",
+  "page_count": 72,
+  "page_number_convention": "1-based physical PDF page; identical to printed page number",
+  "facts": [
+    {
+      "fact": "attendance",
+      "expected_value": "78%",
+      "section": "3.1",
+      "page_number": 11,
+      "expected_evidence_phrase": "The minimum attendance requirement is 78% in each course."
+    },
+    {
+      "fact": "internal_assessment",
+      "expected_value": "21 marks out of 50",
+      "section": "5.2",
+      "page_number": 18,
+      "expected_evidence_phrase": "The internal assessment minimum is 21 marks out of 50 in each course."
+    },
+    {
+      "fact": "late_examination_entry",
+      "expected_value": "20 minutes",
+      "section": "7.1",
+      "page_number": 23,
+      "expected_evidence_phrase": "Late examination entry is permitted only up to 20 minutes after the examination starts."
+    },
+    {
+      "fact": "medical_condonation",
+      "expected_value": ">=73% and <78%; Dean approval",
+      "section": "8.1",
+      "page_number": 26,
+      "expected_evidence_phrase": "Medical condonation is available only where attendance is at least 73% and below 78%, and requires Dean approval."
+    },
+    {
+      "fact": "library_borrowing",
+      "expected_value": "5 books / 21 days / 2 renewals",
+      "section": "13.1",
+      "page_number": 41,
+      "expected_evidence_phrase": "Undergraduate students may borrow 5 books for 21 days, with a maximum of 2 renewals."
+    },
+    {
+      "fact": "hostel_visitors",
+      "expected_value": "19:30",
+      "section": "14.2",
+      "page_number": 45,
+      "expected_evidence_phrase": "Hostel visitors must depart by 19:30."
+    }
+  ],
+  "verification": {
+    "pdf_sha256": "af7f0b2989081a8e2cc8fb800f68a8a0de4e93ab600e12c24ee60c682b30fbb3",
+    "expected_pages": 72
+  }
+}

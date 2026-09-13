@@ -881,6 +881,50 @@ form > button:hover:not(:disabled) {
   border-top-color: rgba(36, 108, 73, 0.15);
 }
 
+.impact-evidence {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(36, 108, 73, 0.18);
+}
+
+.impact-evidence .evidence-toggle {
+  color: #173f3b;
+  border-color: rgba(23, 63, 59, 0.24);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.impact-evidence .evidence-toggle:hover {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.evidence-card {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid rgba(23, 63, 59, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.evidence-card span {
+  color: #4f6c65;
+  font-size: 0.75rem;
+}
+
+.evidence-card p {
+  margin: 0;
+  color: #294943;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.5;
+}
+
 .answer-card {
   padding: 22px;
   background: #173f3b;
@@ -1037,6 +1081,10 @@ form > button:hover:not(:disabled) {
 
   .evidence-metadata {
     align-items: flex-start;
+  }
+
+  .evidence-grid {
+    grid-template-columns: 1fr;
   }
 }
 

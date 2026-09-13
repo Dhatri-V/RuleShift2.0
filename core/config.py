@@ -38,6 +38,11 @@ JWT_EXPIRE_MINUTES_ENV = "RULESHIFT_JWT_EXPIRE_MINUTES"
 DEFAULT_JWT_EXPIRE_MINUTES = 60
 
 MAX_UPLOAD_BYTES_ENV = "RULESHIFT_MAX_UPLOAD_BYTES"
+CHROMA_PATH_ENV = "RULESHIFT_CHROMA_PATH"
+LITELLM_MODEL_ENV = "RULESHIFT_LITELLM_MODEL"
+GEMINI_API_KEY_ENV = "RULESHIFT_GEMINI_API_KEY"
+EMBEDDING_PROVIDER_ENV = "RULESHIFT_EMBEDDING_PROVIDER"
+EMBEDDING_MODEL_ENV = "RULESHIFT_EMBEDDING_MODEL"
 DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
@@ -96,6 +101,44 @@ def get_max_upload_bytes():
             f"Environment variable {MAX_UPLOAD_BYTES_ENV} must be positive."
         )
     return limit
+
+
+def get_chroma_path():
+    return os.environ.get(CHROMA_PATH_ENV, "./chroma_db")
+
+
+def get_litellm_model():
+    return os.environ.get(LITELLM_MODEL_ENV, "gemini/gemini-3.5-flash-lite")
+
+
+def get_litellm_api_key():
+    return get_gemini_api_key()
+
+
+def get_gemini_api_key():
+    value = os.environ.get(GEMINI_API_KEY_ENV)
+    if not value:
+        raise ConfigError(
+            f"Environment variable {GEMINI_API_KEY_ENV} is not set. "
+            "Configure Gemini before using generation, indexing, or retrieval."
+        )
+    return value
+
+
+def get_embedding_provider():
+    return os.environ.get(EMBEDDING_PROVIDER_ENV, "google").strip().lower()
+
+
+def get_embedding_model():
+    return os.environ.get(EMBEDDING_MODEL_ENV, "gemini-embedding-001")
+
+
+def get_embedding_api_key():
+    return get_gemini_api_key()
+
+
+def get_embedding_identity():
+    return f"{get_embedding_provider()}:{get_embedding_model()}"
 
 
 def get_jwt_expire_minutes():

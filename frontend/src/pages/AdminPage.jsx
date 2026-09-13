@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Navigate } from "react-router-dom";
 import ComparePage from "./ComparePage.jsx";
@@ -9,19 +9,22 @@ import {
 } from "../api.js";
 
 
-function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListError = "" }) {
+function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListError = "", manageOwnPolicyData = true }) {
   const [policyName, setPolicyName] = useState("");
   const [policyVersion, setPolicyVersion] = useState("");
   const [policyFile, setPolicyFile] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [adminPolicies, setAdminPolicies] = useState(policies);
+  const [adminPolicyError, setAdminPolicyError] = useState("");
+  const [auditEvents, setAuditEvents] = useState([]);
   const [uploadMessage, setUploadMessage] = useState({ type: "", text: "" });
 
   const [draftRuleValues, setDraftRuleValues] = useState({});
   const [reviewingPolicyId, setReviewingPolicyId] = useState(null);
   const [reviewMessage, setReviewMessage] = useState({ type: "", text: "" });
 
-  const draftPolicies = policies.filter((policy) => policy.status === "DRAFT" || policy.source_check?.status === "MISMATCH");
+  const draftPolicies = adminPolicies.filter((policy) => policy.status === "DRAFT" || policy.source_check?.status === "MISMATCH");
 
   async function adminRequest(path, options) {
     try {
@@ -32,6 +35,29 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
     }
   }
 
+  async function loadAdminPolicies() {
+    try {
+      const [data, events] = await Promise.all([
+        adminRequest("/admin/policies", { headers: adminHeaders(adminToken) }),
+        adminRequest("/admin/audit", { headers: adminHeaders(adminToken) }),
+      ]);
+      if (Array.isArray(data)) setAdminPolicies(data);
+      if (Array.isArray(events)) setAuditEvents(events);
+      setAdminPolicyError("");
+    } catch (error) {
+      setAdminPolicyError(error.message);
+    }
+  }
+
+  useEffect(() => {
+    if (adminToken && manageOwnPolicyData) loadAdminPolicies();
+  }, [adminToken, manageOwnPolicyData]);
+
+  async function refreshPolicies() {
+    if (manageOwnPolicyData) await Promise.all([loadAdminPolicies(), onLoadPolicies()]);
+    else await onLoadPolicies();
+  }
+
   async function handleMarkCurrent(policy) {
     setReviewingPolicyId(policy.id);
     setReviewMessage({ type: "", text: "" });
@@ -40,7 +66,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
         method: "POST", headers: adminHeaders(adminToken),
       });
       setReviewMessage({ type: "success", text: `${data.name} ${data.version} marked current.` });
-      await onLoadPolicies();
+      await refreshPolicies();
     } catch (error) {
       setReviewMessage({ type: "error", text: error.message });
     } finally {
@@ -77,7 +103,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
       });
       setPolicyFile(null);
       setFileInputKey((currentKey) => currentKey + 1);
-      await onLoadPolicies();
+      await refreshPolicies();
     } catch (error) {
       setUploadMessage({ type: "error", text: error.message });
     } finally {
@@ -105,7 +131,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
         type: "success",
         text: `${data.name} ${data.version} updated to ${data.attendance_requirement}% attendance.`,
       });
-      await onLoadPolicies();
+      await refreshPolicies();
     } catch (error) {
       setReviewMessage({ type: "error", text: error.message });
     } finally {
@@ -126,7 +152,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
         type: "success",
         text: `${data.name} ${data.version} verified.`,
       });
-      await onLoadPolicies();
+      await refreshPolicies();
     } catch (error) {
       setReviewMessage({ type: "error", text: error.message });
     } finally {
@@ -155,7 +181,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
         type: "success",
         text: `${data.name} ${data.version} deleted.`,
       });
-      await onLoadPolicies();
+      await refreshPolicies();
     } catch (error) {
       setReviewMessage({ type: "error", text: error.message });
     } finally {
@@ -180,8 +206,9 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
         <a className="nav-link" href="#admin-review">Review / Verify Policy</a>
         <a className="nav-link" href="#admin-versions">Manage Policy Versions</a>
         <a className="nav-link" href="#admin-compare">Compare Policies</a>
+        <a className="nav-link" href="#admin-audit">Audit History</a>
       </nav>
-      {policyListError && <div className="message message-error" role="alert">{policyListError}</div>}
+      {(policyListError || adminPolicyError) && <div className="message message-error" role="alert">{adminPolicyError || policyListError}</div>}
       <Message message={reviewMessage} />
       <section id="admin-upload" className="panel upload-panel" aria-labelledby="upload-heading">
         <div className="panel-heading">
@@ -335,11 +362,11 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
             <h3 id="versions-heading">Manage Policy Versions</h3>
             <p>Review version status and choose the current verified version.</p>
           </div>
-          <button className="text-button" type="button" onClick={onLoadPolicies}>Refresh versions</button>
+          <button className="text-button" type="button" onClick={refreshPolicies}>Refresh versions</button>
         </div>
-        {policies.length === 0 ? <div className="empty-state">No policies saved yet.</div> : (
+        {adminPolicies.length === 0 ? <div className="empty-state">No policies saved yet.</div> : (
           <div className="version-management-list">
-            {policies.map((policy) => (
+            {adminPolicies.map((policy) => (
               <article className="policy-item" key={policy.id}>
                 <div>
                   <strong>{policy.name}</strong>
@@ -349,7 +376,7 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
                 {policy.source_check && <p className={policy.source_check.status === "MISMATCH" ? "message message-error" : "source-note"}>{policy.source_check.message}</p>}</div>
                 <div className="review-actions">
                   {(policy.status === "DRAFT" || policy.source_check?.status === "MISMATCH") && <a className="nav-link" href="#admin-review">Review draft</a>}
-                  {policy.status === "VERIFIED" && (!policy.source_check || ["MATCH", "UNAVAILABLE"].includes(policy.source_check.status)) && (
+                  {policy.status === "VERIFIED" && (!policy.source_check || ["MATCH"].includes(policy.source_check.status)) && (
                     <button type="button" disabled={reviewingPolicyId !== null} onClick={() => handleMarkCurrent(policy)}>
                       Mark current
                     </button>
@@ -360,7 +387,24 @@ function AdminPage({ policies, adminToken, onLogout, onLoadPolicies, policyListE
           </div>
         )}
       </section>
-      <div id="admin-compare"><ComparePage policies={policies} /></div>
+      <div id="admin-compare"><ComparePage policies={adminPolicies} /></div>
+      <section id="admin-audit" className="panel" aria-labelledby="audit-heading">
+        <div className="panel-heading">
+          <div>
+            <h3 id="audit-heading">Audit History</h3>
+            <p>Source verification, corrections, uploads, and publication decisions.</p>
+          </div>
+        </div>
+        {auditEvents.length === 0 ? <div className="empty-state">No audit events recorded yet.</div> : (
+          <div className="version-management-list">
+            {auditEvents.map((event) => <article className="policy-item" key={event.id}>
+              <div><strong>{event.action.replaceAll("_", " ")}</strong><span>{event.occurred_at}</span></div>
+              <div><span>Actor: {event.actor_id}</span><span>Version ID: {event.version_id ?? event.after_state?.version_id ?? "—"}</span></div>
+              {event.reason && <p className="source-note">{event.reason}</p>}
+            </article>)}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

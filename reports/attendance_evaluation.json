@@ -1,0 +1,87 @@
+{
+  "dataset": "evaluation/attendance_cases.json",
+  "total": 11,
+  "passed": 11,
+  "accuracy": 1.0,
+  "citation_correctness": 1.0,
+  "stale_citation_rate": 0.0,
+  "results": [
+    {
+      "id": "answer-direct",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "answer-paraphrase-maintain",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "answer-paraphrase-required",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "boundary-below",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "boundary-equal",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "boundary-above",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "unsupported-library",
+      "passed": true,
+      "actual_state": "INSUFFICIENT_EVIDENCE",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "ambiguous-rules",
+      "passed": true,
+      "actual_state": "CONFLICTING_EVIDENCE",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "wrong-version-trap",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "superseded-trap",
+      "passed": true,
+      "actual_state": "ANSWERED",
+      "citation_ok": true,
+      "no_stale_citation": true
+    },
+    {
+      "id": "source-mismatch",
+      "passed": true,
+      "actual_state": "SOURCE_MISMATCH",
+      "citation_ok": true,
+      "no_stale_citation": true
+    }
+  ]
+}

@@ -21,6 +21,7 @@ function mount(path = "/", token = "", handler = () => undefined) {
     const response = handler(url, options);
     if (response) return response;
     if (url.endsWith("/health")) return json({ status: "ok" });
+    if (url.endsWith("/admin/audit")) return json([]);
     if (url.endsWith("/policies") && !options?.method) return json([draft, verified]);
     if (url.endsWith("/auth/login")) return json({ access_token: "existing-api-token" });
     throw new Error(`Unexpected request ${url}`);
@@ -109,7 +110,7 @@ it("manages versions through the existing authenticated mark-current endpoint", 
   await screen.findByText("Attendance v2 marked current.");
   const call = global.fetch.mock.calls.find(([url]) => url.endsWith("/policies/2/mark-current"));
   expect(call[1]).toEqual({ method: "POST", headers: { Authorization: "Bearer stored-token" } });
-  await waitFor(() => expect(global.fetch.mock.calls.filter(([url]) => url.endsWith("/policies")).length).toBe(2));
+  await waitFor(() => expect(global.fetch.mock.calls.filter(([url]) => url.endsWith("/policies")).length).toBe(4));
 });
 
 it("preserves authenticated PDF upload within the dashboard", async () => {

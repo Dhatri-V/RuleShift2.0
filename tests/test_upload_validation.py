@@ -268,7 +268,7 @@ def test_duplicate_policy_version_rejected(mock_extract, mock_store, client):
     assert "never overwritten" in duplicate.json()["detail"]
 
     # The original policy is untouched and only one copy exists.
-    policies = client.get("/policies").json()
+    policies = client.get("/admin/policies").json()
     matching = [
         p for p in policies
         if p["name"] == "Academic Attendance Policy" and p["version"] == "2026"
@@ -302,7 +302,7 @@ def test_extraction_failure_fails_cleanly_without_creating_policy(
 
     # Nothing was stored and no policy row was created.
     mock_store.assert_not_called()
-    assert client.get("/policies").json() == []
+    assert client.get("/admin/policies").json() == []
 
 
 @patch("backend.main.store_policy_pages")
@@ -321,7 +321,7 @@ def test_extraction_failure_does_not_invent_attendance_value(
     )
 
     assert response.status_code == 503
-    policies = client.get("/policies").json()
+    policies = client.get("/admin/policies").json()
     assert all(p["attendance_requirement"] is not None or p["status"] == "DRAFT"
                for p in policies)
     assert len(policies) == 0

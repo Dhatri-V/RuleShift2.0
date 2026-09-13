@@ -1,7 +1,9 @@
 """Check the transitional scalar against authoritative, version-owned pages."""
+from datetime import datetime
+
 from fastapi import HTTPException
 from core.attendance_source import attendance_provisions
-from database.models import Rule, AuditEvent
+from database.models import Rule, AuditEvent, RuleReview
 
 
 def source_check(policy):
@@ -33,9 +35,8 @@ def source_check(policy):
 
 def require_source_match(policy, value=None):
     check = source_check(policy)
-    # Preserve source-free manual records; the listing explicitly labels them.
     if check['status'] == 'UNAVAILABLE':
-        return check
+        raise HTTPException(status_code=409, detail='Source verification blocked: no authoritative PDF is persisted for this version.')
     if 'expected_value' not in check or (policy.attendance_requirement if value is None else value) != check['expected_value']:
         raise HTTPException(status_code=409, detail=check['message'])
     return check
@@ -43,8 +44,6 @@ def require_source_match(policy, value=None):
 
 def record_verified_rule(database, policy, admin):
     check = require_source_match(policy)
-    if check['status'] == 'UNAVAILABLE':
-        return
     # Link the rule to a clause containing the complete explicit source phrase.
     clauses = [c for c in policy.clauses if any(f['value'] == check['expected_value'] for f in attendance_provisions(c.source_text))]
     if not clauses:
@@ -57,7 +56,25 @@ def record_verified_rule(database, policy, admin):
     rule.attendance_requirement = check['expected_value']
     rule.source_clause_id = clauses[0].id
     rule.legacy_unverified = False
+    database.flush()
+    review = rule.review
+    if review is None:
+        review = RuleReview(rule=rule)
+        database.add(review)
+        # Materialize the valid pending record first so its database timestamp
+        # always precedes the later approval timestamp, including at a second boundary.
+        database.flush()
+    review.status = 'APPROVED'
+    review.reviewer_id = admin['sub']
+    review.reviewed_at = datetime.utcnow()
+    review.reason = 'Rule value and ownership match authoritative same-version source evidence.'
+    review.rule_snapshot = {
+        'attendance_requirement': rule.attendance_requirement,
+        'source_clause_id': rule.source_clause_id,
+        'source_sha256': policy.source_document.sha256,
+    }
     database.add(AuditEvent(family_id=policy.family_id, version_id=policy.id,
         actor_type='ADMIN', actor_id=admin['sub'], action='SOURCE_RULE_VERIFIED',
         after_state={'attendance_requirement': rule.attendance_requirement,
-                     'source_clause_id': rule.source_clause_id, 'source_sha256': policy.source_document.sha256}))
+                     'source_clause_id': rule.source_clause_id, 'source_sha256': policy.source_document.sha256,
+                     'review_status': review.status}))

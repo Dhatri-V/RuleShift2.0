@@ -164,3 +164,4 @@ class Rule(Base):
 from database.supporting_models import AuditEvent, IndexGeneration, RuleReview, ValidationIssue  # noqa: E402,F401
 
 from database.source_models import SourceDocument, SourcePage  # noqa: E402,F401
+from database.decision_models import ImpactRun  # noqa: E402,F401

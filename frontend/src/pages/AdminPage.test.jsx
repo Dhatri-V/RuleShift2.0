@@ -32,6 +32,7 @@ function renderAdminPage({ policies = [DRAFT_POLICY], adminToken = "token" } = {
       adminToken={adminToken}
       onLogout={onLogout}
       onLoadPolicies={onLoadPolicies}
+      manageOwnPolicyData={false}
     />} />
     </Routes></MemoryRouter>,
   );

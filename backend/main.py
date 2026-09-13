@@ -1,4 +1,5 @@
 from typing import Optional
+import re
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ai.extraction import extract_attendance_rule
-from ai.rag import answer_policy_question, delete_policy_chunks, store_policy_pages
+from ai.rag import (answer_policy_question, delete_chunk_ids, delete_policy_chunks,
+                    policy_chunk_ids, store_policy_pages)
 from core.auth import create_access_token, require_admin, verify_admin_credentials
 from core.config import ConfigError, get_max_upload_bytes
 from core.evaluator import check_attendance
@@ -25,6 +27,8 @@ from database.models import (
 from services.source_service import persist_source
 from services.rule_source import source_check, require_source_match, record_verified_rule
 from database.models import AuditEvent
+from database.decision_models import ImpactRun
+from services.index_service import begin_generation, mark_generation_ready, require_healthy_index
 from services.pdf_service import PdfValidationError, extract_pdf_pages
 
 
@@ -77,7 +81,7 @@ class StudentImpactInput(BaseModel):
 
 class PolicyQuestion(BaseModel):
     policy_name: str
-    version: str
+    version: Optional[str] = None
     question: str
 
 
@@ -183,21 +187,34 @@ def create_policy(
     }
 
 
+def policy_payload(policy):
+    return {
+        "id": policy.id,
+        "family_id": policy.family_id,
+        "name": policy.name,
+        "version": policy.version,
+        "attendance_requirement": policy.attendance_requirement,
+        "status": policy.status,
+        "source_check": source_check(policy),
+    }
+
+
 @app.get("/policies")
 def get_policies(database: Session = Depends(get_database)):
-    policies = database.query(Policy).all()
+    """Public catalogue: never expose drafts or partially reviewed versions."""
+    policies = database.query(Policy).filter(
+        Policy.status.in_((POLICY_STATUS_VERIFIED, POLICY_STATUS_CURRENT, POLICY_STATUS_SUPERSEDED))
+    ).all()
+    return [policy_payload(policy) for policy in policies]
 
-    return [
-        {
-            "id": policy.id,
-            "name": policy.name,
-            "version": policy.version,
-            "attendance_requirement": policy.attendance_requirement,
-            "status": policy.status,
-            "source_check": source_check(policy),
-        }
-        for policy in policies
-    ]
+
+@app.get("/admin/policies")
+def get_admin_policies(
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
+    """Admin catalogue includes drafts required by review and upload workflows."""
+    return [policy_payload(policy) for policy in database.query(Policy).all()]
 
 
 @app.post("/policies/upload")
@@ -284,7 +301,7 @@ async def upload_policy(
             detail=(
                 "Could not extract the attendance rule from this PDF. "
                 "No policy was created. Please try again later. "
-                f"(Local AI service error: {error})"
+                f"(AI generation service error: {error})"
             ),
         )
 
@@ -305,15 +322,41 @@ async def upload_policy(
         chunks = persist_source(database, new_policy, pdf_bytes, pages)
         if source_check(new_policy)["status"] == "MISMATCH":
             require_source_match(new_policy)
+        generation = begin_generation(database, new_policy, chunks)
+        new_chunk_ids = policy_chunk_ids(chunks)
         try:
             chunk_count = store_policy_pages(policy_name, version, pages, chunks=chunks)
+            mark_generation_ready(generation, chunk_count)
+            if generation.status != "READY":
+                raise RuntimeError(generation.failure_detail)
+            database.add(AuditEvent(
+                family_id=new_policy.family_id, version_id=None,
+                actor_type="ADMIN", actor_id=admin["sub"], action="POLICY_UPLOADED",
+                after_state={"version_id": new_policy.id,
+                             "source_sha256": new_policy.source_document.sha256,
+                             "page_count": len(pages), "chunk_count": chunk_count,
+                             "index_generation": generation.generation},
+            ))
+            database.commit()
         except Exception as error:
             database.rollback()
-            raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
-        database.commit()
+            try:
+                delete_chunk_ids(new_chunk_ids)
+            except Exception as cleanup_error:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Upload failed and vector cleanup also failed: {cleanup_error}",
+                ) from error
+            if isinstance(error, IntegrityError):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Policy '{policy_name}' version '{version}' already exists.",
+                ) from error
+            if isinstance(error, HTTPException):
+                raise error
+            raise HTTPException(status_code=503, detail=f"AI service error: {error}") from error
     except IntegrityError:
         database.rollback()
-        # Cross-store index compensation remains a separate checkpoint.
         raise HTTPException(
             status_code=409,
             detail=f"Policy '{policy_name}' version '{version}' already exists.",
@@ -358,7 +401,12 @@ def delete_draft_policy(
     try:
         delete_policy_chunks(policy.name, policy.version)
     except Exception as error:
-        raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
+        raise HTTPException(status_code=503, detail=f"AI service error: {error}")
+
+    # Index generations describe derived chunks and must be removed with a draft.
+    for generation in policy.index_generations:
+        database.delete(generation)
+    database.flush()
 
     # Migration preserves legacy thresholds as unverified Rule records.
     # Remove those source-free records when deleting their draft owner.
@@ -419,22 +467,7 @@ def calculate_student_impact(
             detail=f"Policy id {payload.new_policy_id} not found.",
         )
 
-    if old_policy.name != new_policy.name:
-        raise HTTPException(
-            status_code=400,
-            detail="Only versions of the same policy can be compared.",
-        )
-
-    for policy, label in ((old_policy, "Old"), (new_policy, "New")):
-        if policy.status == POLICY_STATUS_DRAFT:
-            raise HTTPException(
-                status_code=409,
-                detail=f"{label} policy version {policy.version} is still DRAFT. "
-                       "Only VERIFIED, CURRENT or SUPERSEDED versions can be compared.",
-            )
-
-    require_source_match(old_policy)
-    require_source_match(new_policy)
+    require_comparable_versions(old_policy, new_policy)
 
     if old_policy.attendance_requirement is None or new_policy.attendance_requirement is None:
         raise HTTPException(
@@ -449,8 +482,24 @@ def calculate_student_impact(
         old_policy.attendance_requirement,
         new_policy.attendance_requirement,
     )
+    old_evidence = rule_evidence(old_policy)
+    new_evidence = rule_evidence(new_policy)
+    run = ImpactRun(
+        old_version_id=old_policy.id,
+        new_version_id=new_policy.id,
+        attendance=payload.attendance,
+        old_rule_snapshot=old_evidence,
+        new_rule_snapshot=new_evidence,
+        old_result=old_result,
+        new_result=new_result,
+        impact=impact,
+    )
+    database.add(run)
+    database.commit()
+    database.refresh(run)
 
     return {
+        "run_id": run.id,
         "attendance": payload.attendance,
         "old_policy": {
             "id": old_policy.id,
@@ -459,6 +508,7 @@ def calculate_student_impact(
             "attendance_requirement": old_policy.attendance_requirement,
             "status": old_policy.status,
             "result": old_result,
+            "evidence": old_evidence,
         },
         "new_policy": {
             "id": new_policy.id,
@@ -467,8 +517,76 @@ def calculate_student_impact(
             "attendance_requirement": new_policy.attendance_requirement,
             "status": new_policy.status,
             "result": new_result,
+            "evidence": new_evidence,
         },
         "impact": impact,
+        "snapshot": {
+            "attendance": payload.attendance,
+            "old": old_evidence,
+            "new": new_evidence,
+        },
+    }
+
+
+@app.get("/impact-runs/{run_id}")
+def get_impact_run(run_id: int, database: Session = Depends(get_database)):
+    run = database.get(ImpactRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Impact run not found.")
+    return {
+        "run_id": run.id,
+        "attendance": run.attendance,
+        "old_result": run.old_result,
+        "new_result": run.new_result,
+        "impact": run.impact,
+        "engine_version": run.engine_version,
+        "old_evidence": run.old_rule_snapshot,
+        "new_evidence": run.new_rule_snapshot,
+        "created_at": run.created_at,
+    }
+
+
+def version_sort_key(value):
+    """Numeric-aware, deterministic ordering for year and dotted version labels."""
+    return tuple(
+        (0, int(token)) if token.isdigit() else (1, token.lower())
+        for token in re.findall(r"\d+|[^\d]+", value.strip())
+    )
+
+
+def require_comparable_versions(old_policy, new_policy):
+    if old_policy.family_id != new_policy.family_id:
+        raise HTTPException(status_code=400, detail="Only versions of the same policy can be compared.")
+    allowed = {POLICY_STATUS_VERIFIED, POLICY_STATUS_CURRENT, POLICY_STATUS_SUPERSEDED}
+    for policy, label in ((old_policy, "Old"), (new_policy, "New")):
+        if policy.status not in allowed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{label} policy version {policy.version} is {policy.status}. Only reviewed versions can be compared.",
+            )
+        require_source_match(policy)
+        if not policy.rules or policy.rules[0].source_clause_id is None:
+            raise HTTPException(status_code=409, detail=f"{label} version has no verified source-linked rule.")
+    if version_sort_key(new_policy.version) <= version_sort_key(old_policy.version):
+        raise HTTPException(status_code=409, detail="New policy version must be chronologically newer than old policy version.")
+
+
+def rule_evidence(policy):
+    rule = policy.rules[0]
+    clause = rule.source_clause
+    return {
+        "policy_id": policy.family_id,
+        "version_id": policy.id,
+        "policy_name": policy.name,
+        "version": policy.version,
+        "rule_id": rule.id,
+        "rule_type": rule.rule_type,
+        "value": rule.attendance_requirement,
+        "clause_id": clause.id,
+        "page_number": clause.page_number,
+        "clause_label": clause.clause_label,
+        "source_text": clause.source_text,
+        "source_sha256": policy.source_document.sha256,
     }
 
 
@@ -497,22 +615,7 @@ def compare_policy_versions(
             detail=f"Policy id {comparison.new_policy_id} not found.",
         )
 
-    if old_policy.name != new_policy.name:
-        raise HTTPException(
-            status_code=400,
-            detail="Only versions of the same policy can be compared.",
-        )
-
-    for policy, label in ((old_policy, "Old"), (new_policy, "New")):
-        if policy.status == POLICY_STATUS_DRAFT:
-            raise HTTPException(
-                status_code=409,
-                detail=f"{label} policy version {policy.version} is still DRAFT. "
-                       "Only VERIFIED, CURRENT or SUPERSEDED versions can be compared.",
-            )
-
-    require_source_match(old_policy)
-    require_source_match(new_policy)
+    require_comparable_versions(old_policy, new_policy)
 
     if old_policy.attendance_requirement is None or new_policy.attendance_requirement is None:
         raise HTTPException(
@@ -532,6 +635,7 @@ def compare_policy_versions(
             "version": old_policy.version,
             "attendance_requirement": old_policy.attendance_requirement,
             "status": old_policy.status,
+            "evidence": rule_evidence(old_policy),
         },
         "new_policy": {
             "id": new_policy.id,
@@ -539,6 +643,7 @@ def compare_policy_versions(
             "version": new_policy.version,
             "attendance_requirement": new_policy.attendance_requirement,
             "status": new_policy.status,
+            "evidence": rule_evidence(new_policy),
         },
         "direction": result["direction"],
         "difference": result["difference"],
@@ -550,34 +655,56 @@ def ask_policy_question(
     request: PolicyQuestion,
     database: Session = Depends(get_database),
 ):
-    policy = (
-        database.query(Policy)
-        .filter(
-            Policy.name == request.policy_name,
-            Policy.version == request.version,
-        )
-        .first()
-    )
-    if not policy:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Policy '{request.policy_name}' version '{request.version}' not found.",
-        )
-    if policy.status == POLICY_STATUS_DRAFT:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Policy '{request.policy_name}' version '{request.version}' is still DRAFT. "
-                   "Only VERIFIED, CURRENT or SUPERSEDED versions can be queried.",
-        )
+    query = database.query(Policy).filter(Policy.name == request.policy_name)
+    if request.version is None:
+        policy = query.filter(Policy.status == POLICY_STATUS_CURRENT).first()
+        if not policy:
+            raise HTTPException(status_code=404, detail=f"No CURRENT version exists for policy '{request.policy_name}'.")
+    else:
+        policy = query.filter(Policy.version == request.version).first()
+        if not policy:
+            raise HTTPException(status_code=404, detail=f"Policy '{request.policy_name}' version '{request.version}' not found.")
+        if policy.status not in {POLICY_STATUS_VERIFIED, POLICY_STATUS_CURRENT, POLICY_STATUS_SUPERSEDED}:
+            raise HTTPException(status_code=409, detail=f"Policy '{request.policy_name}' version '{request.version}' is {policy.status} and cannot be queried.")
+
+    require_source_match(policy)
+    if not policy.rules or policy.rules[0].source_clause_id is None:
+        raise HTTPException(status_code=409, detail="Selected policy has no verified source-linked rule.")
 
     try:
-        return answer_policy_question(
-            request.policy_name,
-            request.version,
-            request.question,
-        )
+        result = answer_policy_question(policy.name, policy.version, request.question)
+        result["resolved_policy"] = {
+            "policy_id": policy.family_id,
+            "version_id": policy.id,
+            "policy_name": policy.name,
+            "version": policy.version,
+            "status": policy.status,
+        }
+        return result
     except Exception as error:
-        raise HTTPException(status_code=503, detail=f"Local AI service error: {error}")
+        raise HTTPException(status_code=503, detail=f"AI generation service error: {error}")
+
+
+@app.get("/admin/audit")
+def get_audit_events(
+    database: Session = Depends(get_database),
+    admin: dict = Depends(require_admin),
+):
+    events = database.query(AuditEvent).order_by(AuditEvent.id.desc()).all()
+    return [{
+        "id": event.id,
+        "family_id": event.family_id,
+        "version_id": event.version_id,
+        "rule_id": event.rule_id,
+        "clause_id": event.clause_id,
+        "actor_type": event.actor_type,
+        "actor_id": event.actor_id,
+        "action": event.action,
+        "reason": event.reason,
+        "before_state": event.before_state,
+        "after_state": event.after_state,
+        "occurred_at": event.occurred_at,
+    } for event in events]
 
 
 @app.patch("/policies/{policy_id}/status")
@@ -648,6 +775,13 @@ def update_policy_rule(
             after_state={'attendance_requirement': payload.attendance_requirement, 'status': POLICY_STATUS_DRAFT},
             reason=check['message']))
         policy.status = POLICY_STATUS_DRAFT
+        if policy.rules and policy.rules[0].review is not None:
+            review = policy.rules[0].review
+            review.status = 'PENDING_REVIEW'
+            review.reviewer_id = None
+            review.reviewed_at = None
+            review.reason = None
+            review.rule_snapshot = None
     policy.attendance_requirement = payload.attendance_requirement
     database.commit()
     database.refresh(policy)
@@ -676,7 +810,20 @@ def verify_policy(
             detail="Only DRAFT policies can be verified.",
         )
 
-    record_verified_rule(database, policy, admin)
+    if any(issue.status == "OPEN" and issue.is_blocking for issue in policy.validation_issues):
+        raise HTTPException(status_code=409, detail="Verification blocked by unresolved validation issues.")
+    try:
+        record_verified_rule(database, policy, admin)
+    except HTTPException as error:
+        database.rollback()
+        policy = database.get(Policy, policy_id)
+        database.add(AuditEvent(
+            family_id=policy.family_id, version_id=policy.id,
+            actor_type="ADMIN", actor_id=admin["sub"], action="VERIFICATION_BLOCKED",
+            reason=str(error.detail), after_state={"status": policy.status},
+        ))
+        database.commit()
+        raise error
     policy.status = POLICY_STATUS_VERIFIED
     database.commit()
     database.refresh(policy)
@@ -706,6 +853,11 @@ def mark_policy_current(
         )
 
     require_source_match(policy)
+    if not policy.rules or policy.rules[0].source_clause_id is None:
+        raise HTTPException(status_code=409, detail="Publication blocked: no verified source-linked rule exists.")
+    if any(issue.status == "OPEN" and issue.is_blocking for issue in policy.validation_issues):
+        raise HTTPException(status_code=409, detail="Publication blocked by unresolved validation issues.")
+    generation = require_healthy_index(policy)
 
     # Find whichever other version of this same policy is currently CURRENT,
     # regardless of its version string, and supersede it. We never compare
@@ -721,12 +873,29 @@ def mark_policy_current(
     )
 
     if previous_current:
+        if version_sort_key(policy.version) <= version_sort_key(previous_current.version):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Publication blocked: version {policy.version} is not chronologically newer "
+                    f"than current version {previous_current.version}."
+                ),
+            )
         previous_current.status = POLICY_STATUS_SUPERSEDED
         # Release the unique CURRENT slot before activating another version,
         # regardless of the order of their primary keys. Both share one commit.
         database.flush()
 
     policy.status = POLICY_STATUS_CURRENT
+    policy.supersedes_version_id = previous_current.id if previous_current else policy.supersedes_version_id
+    database.add(AuditEvent(
+        family_id=policy.family_id, version_id=policy.id,
+        actor_type="ADMIN", actor_id=admin["sub"], action="POLICY_PUBLISHED",
+        before_state={"status": POLICY_STATUS_VERIFIED},
+        after_state={"status": POLICY_STATUS_CURRENT,
+                     "index_generation": generation.generation,
+                     "superseded_version_id": previous_current.id if previous_current else None},
+    ))
     database.commit()
     database.refresh(policy)
 

@@ -36,7 +36,7 @@ def test_empty_upgrade_schema_defaults_indexes_and_metadata_match(migration):
     config, engine = migration
     command.upgrade(config, 'head')
     command.upgrade(config, 'head')
-    assert set(inspect(engine).get_table_names()) == set(CORE_TABLES) | SUPPORTING_TABLES | {'alembic_version', 'source_documents', 'source_pages'}
+    assert set(inspect(engine).get_table_names()) == set(CORE_TABLES) | SUPPORTING_TABLES | {'alembic_version', 'source_documents', 'source_pages', 'impact_runs'}
     with engine.connect() as connection:
         context = MigrationContext.configure(connection, opts={'compare_type': True, 'compare_server_default': True})
         assert compare_metadata(context, Base.metadata) == []
@@ -44,7 +44,8 @@ def test_empty_upgrade_schema_defaults_indexes_and_metadata_match(migration):
         triggers = set(connection.execute(text("SELECT name FROM sqlite_master WHERE type='trigger'")).scalars())
         assert triggers == {'audit_events_no_update', 'audit_events_no_delete', 'audit_events_no_replace',
                             'source_documents_no_update', 'source_documents_no_replace',
-                            'source_pages_no_update', 'source_pages_no_replace'}
+                            'source_pages_no_update', 'source_pages_no_replace',
+                            'impact_runs_no_update', 'impact_runs_no_delete'}
         for table in SUPPORTING_TABLES:
             assert connection.scalar(text(f'SELECT count(*) FROM {table}')) == 0
 
@@ -55,7 +56,7 @@ def test_populated_core_upgrade_preserves_all_data_and_infers_no_supporting_resu
     command.upgrade(config, 'head')
     with engine.connect() as connection:
         assert snapshot(connection) == before
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0004_source'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0005_impact'
         for table in SUPPORTING_TABLES:
             assert connection.scalar(text(f'SELECT count(*) FROM {table}')) == 0
         assert connection.execute(text('PRAGMA foreign_key_check')).all() == []
@@ -88,7 +89,7 @@ def test_downgrade_refuses_each_kind_of_supporting_data(migration, kind):
     with pytest.raises(RuntimeError, match='discard supporting records'):
         command.downgrade(config, '0002_core')
     with engine.connect() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0004_source'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0005_impact'
         table = {'issue': 'validation_issues', 'review': 'rule_reviews', 'index': 'index_generations', 'audit': 'audit_events'}[kind]
         assert connection.scalar(text(f'SELECT count(*) FROM {table}')) == 1
 

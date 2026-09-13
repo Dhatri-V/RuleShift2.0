@@ -219,7 +219,8 @@ def test_authenticated_large_upload_persists_all_chunks_and_rejects_duplicate(
     assert duplicate.status_code == 409
     assert set(pipeline.store.get()["ids"]) == set(indexed["ids"])
     assert pipeline.extract.call_count == 1
-    assert len(pipeline.client.get("/policies").json()) == 1
+    assert pipeline.client.get("/policies").json() == []
+    assert len(pipeline.client.get("/admin/policies", headers=admin_headers).json()) == 1
 
 
 def test_large_upload_extraction_failure_leaves_no_data(large_pdf, pipeline, admin_headers):
@@ -260,7 +261,6 @@ def test_authoritative_clauses_required_for_all_nonempty_pages(pipeline, admin_h
             assert clause.source_text == pages[clause.page_number][clause.start_offset:clause.end_offset]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Ingestion gap: failed SQL commit leaves indexed chunks behind")
 def test_failed_commit_must_remove_new_chunks(pipeline, admin_headers, monkeypatch):
     pdf, _ = make_mixed_pdf(100)
     def fail_commit(self):

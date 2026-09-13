@@ -107,7 +107,7 @@ def test_source_migration_preserves_legacy_and_refuses_lossy_downgrade(migration
     with pytest.raises(RuntimeError, match='discard source evidence'):
         command.downgrade(config, '0003_supporting')
     with engine.connect() as conn:
-        assert conn.scalar(text('SELECT version_num FROM alembic_version')) == '0004_source'
+        assert conn.scalar(text('SELECT version_num FROM alembic_version')) == '0005_impact'
         assert conn.scalar(text('SELECT count(*) FROM source_documents')) == 1
     with pytest.raises(IntegrityError, match='immutable'), engine.begin() as conn:
         conn.execute(text("UPDATE source_documents SET parser='tampered'"))

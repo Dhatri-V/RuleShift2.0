@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.main import app, get_database
-from conftest import TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD
+from conftest import TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD, upload_source_policy
 from core.auth import JWT_ALGORITHM
 from core.config import DEFAULT_JWT_EXPIRE_MINUTES
 from database.db import Base
@@ -173,8 +173,8 @@ def test_verify_with_expired_token_rejected(client):
 
 
 def test_verify_with_valid_token_works(client):
-    policy = create_draft(client)
     token = login(client).json()["access_token"]
+    policy = upload_source_policy(client, attendance=80, headers={"Authorization": f"Bearer {token}"})
 
     response = client.post(
         f"/policies/{policy['id']}/verify",
@@ -222,7 +222,7 @@ def test_token_signed_with_wrong_secret_rejected(client):
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         },
-        "attacker-controlled-secret",
+        "attacker-controlled-secret-with-32-bytes",
         algorithm=JWT_ALGORITHM,
     )
 
@@ -264,23 +264,20 @@ def test_token_without_admin_role_rejected(client):
 # ---------------------------------------------------------------------------
 
 
-def test_policy_list_is_public(client):
+def test_public_policy_list_excludes_drafts(client):
     create_draft(client)
-
     response = client.get("/policies")
-
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert response.json() == []
 
 
 @patch("backend.main.answer_policy_question")
 def test_ask_is_public_without_login(mock_answer, client):
     mock_answer.return_value = {"answer": "85%", "evidence": []}
-    policy = create_draft(client)
-    client.post(
-        f"/policies/{policy['id']}/verify",
-        headers={"Authorization": f"Bearer {login(client).json()['access_token']}"},
-    )
+    token = login(client).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    policy = upload_source_policy(client, attendance=80, headers=headers)
+    client.post(f"/policies/{policy['id']}/verify", headers=headers)
 
     response = client.post(
         "/ask",
@@ -296,16 +293,12 @@ def test_ask_is_public_without_login(mock_answer, client):
 
 
 def test_compare_versions_is_public_without_login(client):
-    draft = create_draft(client, version="2025", attendance_requirement=75)
-    client.post(
-        f"/policies/{draft['id']}/verify",
-        headers={"Authorization": f"Bearer {login(client).json()['access_token']}"},
-    )
-    draft2 = create_draft(client, version="2026", attendance_requirement=85)
-    client.post(
-        f"/policies/{draft2['id']}/verify",
-        headers={"Authorization": f"Bearer {login(client).json()['access_token']}"},
-    )
+    token = login(client).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    draft = upload_source_policy(client, version="2025", attendance=75, headers=headers)
+    client.post(f"/policies/{draft['id']}/verify", headers=headers)
+    draft2 = upload_source_policy(client, version="2026", attendance=85, headers=headers)
+    client.post(f"/policies/{draft2['id']}/verify", headers=headers)
 
     response = client.post(
         "/compare-versions",
@@ -317,11 +310,12 @@ def test_compare_versions_is_public_without_login(client):
 
 
 def test_student_impact_is_public_without_login(client):
-    draft = create_draft(client, version="2025", attendance_requirement=75)
     token = login(client).json()["access_token"]
-    client.post(f"/policies/{draft['id']}/verify", headers={"Authorization": f"Bearer {token}"})
-    draft2 = create_draft(client, version="2026", attendance_requirement=85)
-    client.post(f"/policies/{draft2['id']}/verify", headers={"Authorization": f"Bearer {token}"})
+    headers = {"Authorization": f"Bearer {token}"}
+    draft = upload_source_policy(client, version="2025", attendance=75, headers=headers)
+    client.post(f"/policies/{draft['id']}/verify", headers=headers)
+    draft2 = upload_source_policy(client, version="2026", attendance=85, headers=headers)
+    client.post(f"/policies/{draft2['id']}/verify", headers=headers)
 
     response = client.post(
         "/student-impact",

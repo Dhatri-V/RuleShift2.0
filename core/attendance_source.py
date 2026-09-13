@@ -56,3 +56,27 @@ def ordinary_attendance_question(question):
         r'what is the (?:minimum |ordinary )?attendance requirement|'
         r'how much attendance is required|what attendance percentage (?:do i need|is required))\s*[?.!]*\s*',
         question, re.I))
+
+
+def stated_attendance_for_comparison(question):
+    """Return one measured attendance value from a narrow compliance question.
+
+    Eligibility and exception questions deliberately remain outside this helper:
+    a threshold comparison cannot resolve condonation or other requirements.
+    """
+    if not re.search(r"\battendance\b", question, re.I):
+        return None
+    if not re.search(
+        r"\b(?:compliant|enough)\b|"
+        r"\b(?:meet|satisfy)\b[^?!.]*\b(?:requirement|rule)\b|"
+        r"\b(?:requirement|rule)\b[^?!.]*\b(?:meet|satisfy)\b",
+        question,
+        re.I,
+    ):
+        return None
+
+    values = re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:%|percent\b)", question, re.I)
+    if len(values) != 1:
+        return None
+    value = float(values[0])
+    return value if 0 <= value <= 100 else None

@@ -120,8 +120,12 @@ function AskPage({ policies }) {
             <select
               value={questionPolicyName}
               onChange={(event) => {
-                setQuestionPolicyName(event.target.value);
-                setQuestionVersion("");
+                const selectedName = event.target.value;
+                setQuestionPolicyName(selectedName);
+                const current = comparablePolicies.find(
+                  (policy) => policy.name === selectedName && policy.status === "CURRENT",
+                );
+                setQuestionVersion(current?.version || "");
                 setAnswer("");
                 setEvidence([]);
                 setEvidenceOpen(false);

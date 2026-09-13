@@ -11,6 +11,23 @@ const STUDENT_IMPACT_STYLES = {
 };
 
 
+const VERSION_COLLATOR = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+function sameFamily(left, right) {
+  return left?.family_id != null && right?.family_id != null
+    ? String(left.family_id) === String(right.family_id)
+    : left?.name === right?.name;
+}
+
+function ImpactEvidence({ label, evidence }) {
+  if (!evidence) return null;
+  return <article className="evidence-card">
+    <strong>{label}: {evidence.policy_name} · {evidence.version}</strong>
+    <span>Page {evidence.page_number} · Clause {evidence.clause_id}</span>
+    <p>{evidence.source_text}</p>
+  </article>;
+}
+
 function ImpactPage({ policies }) {
   const [impactOldPolicyId, setImpactOldPolicyId] = useState("");
   const [impactNewPolicyId, setImpactNewPolicyId] = useState("");
@@ -18,20 +35,22 @@ function ImpactPage({ policies }) {
   const [calculatingImpact, setCalculatingImpact] = useState(false);
   const [studentImpact, setStudentImpact] = useState(null);
   const [impactMessage, setImpactMessage] = useState({ type: "", text: "" });
+  const [impactEvidenceOpen, setImpactEvidenceOpen] = useState(false);
 
-  const comparablePolicies = policies.filter((policy) => policy.status !== "DRAFT");
+  const comparablePolicies = policies.filter((policy) => ["VERIFIED", "CURRENT", "SUPERSEDED"].includes(policy.status));
   const impactOldPolicy = comparablePolicies.find(
     (policy) => String(policy.id) === String(impactOldPolicyId),
   );
   const impactNewPolicyOptions = comparablePolicies.filter(
-    (policy) =>
-      policy.name === impactOldPolicy?.name && String(policy.id) !== String(impactOldPolicyId),
-  );
+    (policy) => sameFamily(policy, impactOldPolicy) &&
+      VERSION_COLLATOR.compare(String(policy.version), String(impactOldPolicy?.version)) > 0,
+  ).sort((left, right) => VERSION_COLLATOR.compare(String(left.version), String(right.version)));
 
   async function handleStudentImpact(event) {
     event.preventDefault();
     setCalculatingImpact(true);
     setStudentImpact(null);
+    setImpactEvidenceOpen(false);
     setImpactMessage({ type: "", text: "" });
 
     try {
@@ -164,6 +183,16 @@ function ImpactPage({ policies }) {
             <span>Impact</span>
             <strong>{studentImpact.impact.replaceAll("_", " ")}</strong>
             <code>{studentImpact.impact}</code>
+          </div>
+          <div className="impact-evidence">
+            <button type="button" className="evidence-toggle" aria-expanded={impactEvidenceOpen}
+              onClick={() => setImpactEvidenceOpen((open) => !open)}>
+              {impactEvidenceOpen ? "Hide old and new source evidence" : "View old and new source evidence"}
+            </button>
+            {impactEvidenceOpen && <div className="evidence-grid">
+              <ImpactEvidence label="Old rule" evidence={studentImpact.old_policy.evidence} />
+              <ImpactEvidence label="New rule" evidence={studentImpact.new_policy.evidence} />
+            </div>}
           </div>
         </div>
       )}

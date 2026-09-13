@@ -22,6 +22,7 @@ from sqlalchemy.pool import StaticPool
 from ai.rag import delete_policy_chunks, retrieve_policy_chunks, store_policy_pages
 from backend.main import app, get_database
 from core.auth import require_admin
+from conftest import drop_all_test_schema, upload_source_policy
 from database.db import Base
 
 
@@ -50,7 +51,7 @@ def client():
             yield test_client
     finally:
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=test_engine)
+        drop_all_test_schema(test_engine)
         test_engine.dispose()
 
 
@@ -93,7 +94,7 @@ def create_draft(client, version="2026", name="Academic Attendance Policy"):
 
 
 def create_verified(client, version="2026", name="Academic Attendance Policy"):
-    policy = create_draft(client, version=version, name=name)
+    policy = upload_source_policy(client, name=name, version=version, attendance=80)
     response = client.post(f"/policies/{policy['id']}/verify")
     assert response.status_code == 200
     return response.json()
@@ -114,7 +115,7 @@ def test_authorized_draft_deletion_succeeds(client):
     assert data["deleted"] is True
     assert data["id"] == policy["id"]
 
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert all(item["id"] != policy["id"] for item in remaining)
 
 
@@ -132,7 +133,7 @@ def test_delete_nonexistent_policy_has_no_side_effects(client):
 
     assert response.status_code == 404
     # The unrelated existing policy is completely unaffected.
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert any(item["id"] == policy["id"] for item in remaining)
 
 
@@ -149,7 +150,7 @@ def test_invalid_token_deletion_rejected(client):
         app.dependency_overrides[require_admin] = lambda: {"sub": "admin", "role": "admin"}
 
     assert response.status_code == 401
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert any(item["id"] == policy["id"] for item in remaining)
 
 
@@ -179,7 +180,7 @@ def test_expired_token_deletion_rejected(client):
         app.dependency_overrides[require_admin] = lambda: {"sub": "admin", "role": "admin"}
 
     assert response.status_code == 401
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert any(item["id"] == policy["id"] for item in remaining)
 
 
@@ -200,7 +201,7 @@ def test_unauthenticated_deletion_rejected(client):
 
     assert response.status_code == 401
     # The draft policy must still exist.
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert any(item["id"] == policy["id"] for item in remaining)
 
 
@@ -229,7 +230,7 @@ def test_non_draft_policies_cannot_be_deleted(client, setup):
     assert "Only DRAFT policies can be deleted" in response.json()["detail"]
 
     # The policy must still exist with its original status.
-    statuses = {p["id"]: p["status"] for p in client.get("/policies").json()}
+    statuses = {p["id"]: p["status"] for p in client.get("/admin/policies").json()}
     assert statuses[policy["id"]] != "DRAFT"
 
 
@@ -291,7 +292,7 @@ def test_chroma_failure_aborts_deletion_and_keeps_policy(
     assert response.status_code == 503
 
     # SQLite is authoritative: the policy row must still exist.
-    remaining = client.get("/policies").json()
+    remaining = client.get("/admin/policies").json()
     assert any(item["id"] == policy["id"] for item in remaining)
 
 
@@ -376,7 +377,7 @@ def test_successful_deletion_keeps_sqlite_and_chroma_consistent(
     assert response.status_code == 200
     # SQLite row gone...
     assert all(
-        item["id"] != draft["id"] for item in client.get("/policies").json()
+        item["id"] != draft["id"] for item in client.get("/admin/policies").json()
     )
     # ...and Chroma chunks gone for that exact policy_name + version.
     assert retrieve_policy_chunks(
@@ -394,14 +395,13 @@ def test_rejected_deletion_preserves_sqlite_row_and_chroma_chunks(
     ]
     store_policy_pages("Academic Attendance Policy", "2026", pages)
 
-    policy = create_draft(client, version="2026")
-    client.post(f"/policies/{policy['id']}/verify")  # now VERIFIED
+    policy = create_verified(client, version="2026")
 
     response = client.delete(f"/policies/{policy['id']}")
 
     assert response.status_code == 409
     # SQLite row remains...
-    statuses = {p["id"]: p["status"] for p in client.get("/policies").json()}
+    statuses = {p["id"]: p["status"] for p in client.get("/admin/policies").json()}
     assert statuses[policy["id"]] == "VERIFIED"
     # ...and Chroma chunks remain (no partial deletion).
     assert retrieve_policy_chunks(

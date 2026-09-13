@@ -9,7 +9,9 @@ alembic
 python-dotenv
 PyMuPDF==1.26.1
 langchain==0.3.27
-langchain-ollama==0.3.6
+langchain-google-genai==2.1.12
+langchain-litellm==0.1.4
+litellm>=1.65.1,<2.0.0
 langchain-chroma==0.2.6
 langchain-text-splitters==0.3.11
 chromadb

@@ -79,7 +79,7 @@ This becomes the recommended manual-upload sample instead of the earlier tiny
 PDFs. It was not automatically uploaded to the live database and no existing
 verified sample policy was deleted. The user can exercise the real UI flow:
 
-1. Start the backend, Vite and the existing Ollama services.
+1. Configure the Gemini API key, then start the backend and Vite services.
 2. In Admin, log in using the configured local account.
 3. Choose the sample PDF, policy name `Academic Handbook (100-page DEMO)` and
    version `2026-DEMO`. Use a new version label for a deliberate later upload;
@@ -112,7 +112,7 @@ and authenticated upload of the actual on-disk 100-page sample.
 
 Tests use the real parser, chunker, SQLite and Chroma persistence. Rule extraction
 and embeddings are deterministic doubles; successful tests do not certify live
-Ollama throughput, context handling or semantic accuracy. Tests run from a clean
+Gemini throughput, context handling or semantic accuracy. Tests run from a clean
 disposable directory, avoiding both module shadowing and the live Chroma store.
 
 ```sh
